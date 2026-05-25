@@ -134,6 +134,7 @@ func loadCommonSettingsFrom(cfg ConfigProvider) error {
 	if err := loadLFSFrom(cfg); err != nil {
 		return err
 	}
+	loadDFSFrom(cfg)
 	loadTimeFrom(cfg)
 	loadRepositoryFrom(cfg)
 	if err := loadAvatarsFrom(cfg); err != nil {

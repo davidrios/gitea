@@ -386,6 +386,13 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		}
 	}
 
+	dfsServerEnabled := func(ctx *context.Context) {
+		if !setting.DFS.Enabled {
+			ctx.HTTPError(http.StatusNotFound)
+			return
+		}
+	}
+
 	federationEnabled := func(ctx *context.Context) {
 		if !setting.Federation.Enabled {
 			ctx.HTTPError(http.StatusNotFound)
@@ -1734,6 +1741,10 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 	// git lfs uses its own jwt key, and it handles the token & auth by itself, it conflicts with the general "OAuth2" auth method
 	// pattern: "/{username}/{reponame}/{lfs-paths}": git-lfs support, see also addOwnerRepoGitHTTPRouters
 	common.AddOwnerRepoGitLFSRoutes(m, lfsServerEnabled, webAuth.AllowBasic, repo.CorsHandler(), optSignInFromAnyOrigin)
+
+	// git-dfs URL-discovery endpoint. Same middleware shape as LFS so basic
+	// auth is accepted; the handler enforces repo read-access scope.
+	common.AddOwnerRepoGitDFSRoutes(m, dfsServerEnabled, webAuth.AllowBasic, repo.CorsHandler(), optSignInFromAnyOrigin)
 
 	// Some users want to use "web-based git client" to access Gitea's repositories,
 	// so the CORS handler and OPTIONS method are used.
