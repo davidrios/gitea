@@ -1743,13 +1743,10 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 	// pattern: "/{username}/{reponame}/{lfs-paths}": git-lfs support, see also addOwnerRepoGitHTTPRouters
 	common.AddOwnerRepoGitLFSRoutes(m, lfsServerEnabled, webAuth.AllowBasic, repo.CorsHandler(), optSignInFromAnyOrigin)
 
-	// git-dfs URL-discovery endpoint. Same middleware shape as LFS so basic
-	// auth is accepted; the handler enforces repo read-access scope.
 	common.AddOwnerRepoGitDFSRoutes(m, dfsServerEnabled, webAuth.AllowBasic, repo.CorsHandler(), optSignInFromAnyOrigin)
 
-	// git-dfs upstream-authz hook for xet-server's HttpAuthz. The handler
-	// gates itself on a shared secret (or warns if unset); no extra auth
-	// middleware here — the body carries the user's PAT.
+	// xet-server posts here to authorize a client's JWT. No auth middleware:
+	// the body carries the gitea-minted bearer.
 	m.Post("/-/dfs/check_access", dfsServerEnabled, dfs_service.CheckAccessHandler)
 
 	// Some users want to use "web-based git client" to access Gitea's repositories,

@@ -577,10 +577,8 @@ func authenticate(ctx *context.Context, repository *repo_model.Repository, autho
 	return true
 }
 
-// HandleLFSToken verifies an LFS-issued JWT bearer (just the JWT, no "Bearer "
-// prefix) and returns the gitea user it represents, after checking that the
-// claims bind to `target` and grant `mode` against the code unit. Exposed for
-// reuse by the git-dfs check_access handler, which speaks the same JWT shape.
+// HandleLFSToken is the exported entry point for handleLFSToken; reused by
+// the git-dfs check_access handler.
 func HandleLFSToken(ctx stdCtx.Context, tokenSHA string, target *repo_model.Repository, mode perm_model.AccessMode) (*user_model.User, error) {
 	return handleLFSToken(ctx, tokenSHA, target, mode)
 }

@@ -21,14 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Exercises POST /-/dfs/check_access — the upstream-authz hook that
-// xet-server's HttpAuthz posts to. The contract is that `hub_bearer`
-// carries an LFS-shape JWT minted by gitea (HTTPS authenticate or SSH
-// git-dfs-authenticate); the client trades any long-lived credential for
-// a short-lived JWT inside gitea before reaching xet-server.
-//
-// DFS reuses LFS's JWT minter, so the JWT carries the user, repo, and op
-// — the verifier rejects cross-repo replay at the JWT layer.
 func TestDFSCheckAccess(t *testing.T) {
 	defer tests.PrepareTestEnv(t)()
 
@@ -48,9 +40,6 @@ func TestDFSCheckAccess(t *testing.T) {
 		return func() { stop4(); stop3(); stop2(); stop1() }
 	}
 
-	// Mint a JWT scoped to (userID, repoID, op). Caller must have DFS
-	// settings mocked first. Strips the "Bearer " prefix — check_access
-	// accepts both shapes but tests cover the bare-JWT case.
 	mintFor := func(t *testing.T, userID, repoID int64, op string) string {
 		t.Helper()
 		defer withDFS()()
@@ -58,7 +47,7 @@ func TestDFSCheckAccess(t *testing.T) {
 			Op: op, UserID: userID, RepoID: repoID,
 		})
 		require.NoError(t, err)
-		return token // includes "Bearer " prefix; the handler strips it
+		return token
 	}
 
 	post := func(t *testing.T, body string) *http.Response {
@@ -118,8 +107,6 @@ func TestDFSCheckAccess(t *testing.T) {
 	})
 
 	t.Run("JWT bound to a different repo is rejected", func(t *testing.T) {
-		// user2's repo1 JWT must NOT be honored against user2/repo2 — the
-		// LFS-style claims include RepoID and the verifier cross-checks it.
 		defer tests.PrintCurrentTest(t)()
 		defer withDFS()()
 
@@ -184,8 +171,6 @@ func TestDFSCheckAccess(t *testing.T) {
 	})
 
 	t.Run("JWT minted with a different secret is rejected", func(t *testing.T) {
-		// Simulates a stolen JWT from an old gitea install — rotated
-		// secret invalidates outstanding bearers immediately.
 		defer tests.PrintCurrentTest(t)()
 		stop1 := test.MockVariableValue(&setting.DFS.Enabled, true)
 		stop2 := test.MockVariableValue(&setting.DFS.ServerURL, expectedURL)
@@ -200,7 +185,7 @@ func TestDFSCheckAccess(t *testing.T) {
 		stop2()
 		stop1()
 
-		defer withDFS()() // restore the canonical jwtSecret
+		defer withDFS()() // restore canonical jwtSecret
 
 		resp := post(t, body(token, "user2/repo1", "read"))
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)

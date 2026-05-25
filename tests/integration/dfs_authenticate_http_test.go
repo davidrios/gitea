@@ -20,20 +20,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Exercises POST /<owner>/<repo>.git/info/dfs/authenticate — the HTTPS
-// analog of the SSH `git-dfs-authenticate` command. The user's gitea
-// credentials are presented via Basic auth (handled by gitea's standard
-// `webAuth.AllowBasic` middleware); the response carries a short-lived JWT
-// scoped to the user + repo. The user's password must never leave gitea;
-// xet-server only ever sees the JWT.
-//
-// Reuses LFS's JWT minter under the hood, so the JWT shape is identical to
-// what `git-lfs-authenticate` returns.
 func TestDFSAuthenticateHTTP(t *testing.T) {
 	defer tests.PrepareTestEnv(t)()
 
 	const xetURL = "https://cas.example.test"
-	const userPassword = "password" // matches the default password for fixture users
+	const userPassword = "password" // default password for fixture users
 
 	basic := func(user, pass string) string {
 		return "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+pass))

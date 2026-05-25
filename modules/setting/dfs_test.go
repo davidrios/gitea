@@ -39,8 +39,6 @@ SERVER_URL = https://cas.example.test/
 	})
 
 	t.Run("force-disabled when URL is empty", func(t *testing.T) {
-		// Without a server URL the discovery endpoint has nothing to hand
-		// back. Refuse to come up half-configured.
 		defer resetDFS()
 		cfg, err := NewConfigProviderFromData(`
 [dfs]

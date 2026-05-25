@@ -120,8 +120,7 @@ func getAccessMode(verb, subVerb string) perm.AccessMode {
 	case git.CmdVerbReceivePack:
 		return perm.AccessModeWrite
 	case git.CmdVerbLfsAuthenticate, git.CmdVerbLfsTransfer, git.CmdVerbDfsAuthenticate:
-		// DFS reuses LFS's upload/download subverb vocabulary so clients
-		// only have to learn one shape.
+		// DFS reuses LFS's upload/download subverb vocabulary.
 		switch subVerb {
 		case git.CmdSubVerbLfsUpload:
 			return perm.AccessModeWrite
@@ -308,10 +307,8 @@ func runServ(ctx context.Context, c *cli.Command) error {
 	}
 
 	// git-dfs token authentication. SSH user is already auth'd via pubkey;
-	// mint a short-lived JWT scoped to that user + repo and hand it back
-	// for the client to present to xet-server. The same JWT shape and
-	// secret as LFS — verified later via `lfs.HandleLFSToken` inside the
-	// /-/dfs/check_access handler.
+	// mint a JWT for the client to present to xet-server. Same shape/secret
+	// as LFS — verified via lfs.HandleLFSToken in /-/dfs/check_access.
 	if verb == git.CmdVerbDfsAuthenticate {
 		token, err := lfs.GetLFSAuthTokenWithBearer(lfs.AuthTokenOptions{
 			Op: subVerb, UserID: results.UserID, RepoID: results.RepoID,

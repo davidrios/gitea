@@ -9,10 +9,7 @@ const (
 	CmdVerbReceivePack     = "git-receive-pack"
 	CmdVerbLfsAuthenticate = "git-lfs-authenticate"
 	CmdVerbLfsTransfer     = "git-lfs-transfer"
-	// CmdVerbDfsAuthenticate mirrors `git-lfs-authenticate` for the git-dfs
-	// integration. There is no transfer verb because, unlike LFS, gitea is
-	// not the byte store — the client talks to xet-server directly after
-	// receiving the ephemeral bearer this command returns.
+	// No transfer verb: after this returns, the client talks to xet-server directly.
 	CmdVerbDfsAuthenticate = "git-dfs-authenticate"
 
 	CmdSubVerbLfsUpload   = "upload"

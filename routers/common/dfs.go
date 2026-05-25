@@ -12,18 +12,11 @@ import (
 
 const RouterMockPointCommonDFS = "common-dfs"
 
-// AddOwnerRepoGitDFSRoutes mounts the DFS routes under
-// `/{username}/{reponame}/info/dfs`. The route group accepts the same `.git`
-// suffix on `{reponame}` that the LFS routes do — git clients derive the
-// info path by appending to the remote URL.
-//
-// Today this only mounts the discovery endpoint; transfer-token and
-// authz-upstream routes land in M-gitea-3 / M-gitea-4.
+// AddOwnerRepoGitDFSRoutes mounts DFS routes under
+// /{username}/{reponame}/info/dfs (with optional `.git` suffix).
 func AddOwnerRepoGitDFSRoutes(m *web.Router, middlewares ...any) {
 	m.Group("/{username}/{reponame}/info/dfs", func() {
 		m.Get("", dfs.DiscoveryHandler)
-		// HTTPS analog of the SSH `git-dfs-authenticate` command. Accepts
-		// HTTPS Basic auth, mints a short-lived gitea-signed bearer.
 		m.Post("/authenticate", dfs.AuthenticateHTTPHandler)
 		m.Any("/*", http.NotFound)
 	}, append([]any{web.RouterMockPoint(RouterMockPointCommonDFS)}, middlewares...)...)

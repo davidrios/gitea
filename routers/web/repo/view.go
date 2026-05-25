@@ -62,10 +62,7 @@ const (
 type fileInfo struct {
 	blobOrLfsSize int64
 	lfsMeta       *lfs.Pointer
-	// dfsMeta is set when the blob is a git-dfs JSON pointer. Unlike LFS,
-	// gitea does NOT hold the underlying bytes — they live on a separate
-	// xet-server — so this is recognition-only: we render metadata in the
-	// UI but don't substitute the reader.
+	// dfsMeta is recognition-only; gitea doesn't hold the underlying bytes.
 	dfsMeta *dfs.Pointer
 	st      typesniffer.SniffedType
 }
@@ -97,9 +94,7 @@ func getFileReader(ctx gocontext.Context, repoID int64, blob *git.Blob) (buf []b
 		return buf, dataRc, fi, nil
 	}
 
-	// DFS pointers are JSON, distinct from LFS's `version https://...` format,
-	// so the two checks never collide. Try DFS first because it's a cheap
-	// substring probe; an LFS pointer can't match the `"hash"` sentinel.
+	// DFS pointers are JSON and won't collide with LFS's `version ...` shape.
 	if dfsPointer, err := dfs.ReadPointerFromBuffer(buf); err == nil {
 		fi.dfsMeta = &dfsPointer
 		fi.blobOrLfsSize = dfsPointer.FileSize

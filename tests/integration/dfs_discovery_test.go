@@ -17,8 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Exercises /{owner}/{repo}.git/info/dfs, the URL-discovery endpoint that
-// lets a git-dfs client find its xet-server without a hard-coded config.
 func TestDFSDiscovery(t *testing.T) {
 	defer tests.PrepareTestEnv(t)()
 
@@ -47,8 +45,6 @@ func TestDFSDiscovery(t *testing.T) {
 	})
 
 	t.Run("Path without .git suffix also works", func(t *testing.T) {
-		// git-dfs may probe both. Gitea's route matches `{reponame}` and
-		// trims `.git` server-side, so both must resolve to the same repo.
 		defer tests.PrintCurrentTest(t)()
 		defer test.MockVariableValue(&setting.DFS.Enabled, true)()
 		defer test.MockVariableValue(&setting.DFS.ServerURL, expectedURL)()
@@ -58,8 +54,7 @@ func TestDFSDiscovery(t *testing.T) {
 	})
 
 	t.Run("Private repo without auth returns 404", func(t *testing.T) {
-		// Anonymous probes must not be able to tell whether a private repo
-		// exists — same shape as other gitea repo endpoints.
+		// 404 not 403 — must not leak existence of private repos.
 		defer tests.PrintCurrentTest(t)()
 		defer test.MockVariableValue(&setting.DFS.Enabled, true)()
 		defer test.MockVariableValue(&setting.DFS.ServerURL, expectedURL)()

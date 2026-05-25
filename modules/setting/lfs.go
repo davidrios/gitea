@@ -78,18 +78,13 @@ func loadLFSFrom(rootCfg ConfigProvider) error {
 		return nil
 	}
 	if !LFS.StartServer && !DFS.Enabled {
-		// Skip the secret if neither LFS nor DFS needs it. DFS reuses the
-		// LFS JWT secret so an installation can enable git-dfs without
-		// turning LFS bytes hosting on.
 		return nil
 	}
 	return loadLFSJWTSecret(rootCfg)
 }
 
-// loadLFSJWTSecret reads (or generates and persists) the HMAC key used to
-// sign LFS auth JWTs. The same key is reused by the git-dfs handlers — see
-// `loadDFSFrom`, which runs after LFS load and triggers this if DFS is on
-// but LFS is off.
+// loadLFSJWTSecret loads or generates the HMAC key for LFS auth JWTs. The
+// same key is reused by git-dfs (see loadDFSFrom).
 func loadLFSJWTSecret(rootCfg ConfigProvider) error {
 	jwtSecretBase64 := loadSecret(rootCfg.Section("server"), "LFS_JWT_SECRET_URI", "LFS_JWT_SECRET")
 	bytes, err := generate.DecodeJwtSecretBase64(jwtSecretBase64)

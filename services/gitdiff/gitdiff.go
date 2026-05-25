@@ -960,10 +960,8 @@ func parseHunks(ctx context.Context, curFile *DiffFile, maxLines, maxLineCharact
 		curFileLFSPrefix  bool
 	)
 
-	// DFS pointers span multiple JSON lines so the per-line LFS trick can't
-	// see them. Instead, accumulate the file's added-line content up to the
-	// pointer size cap and try a single parse on exit. Capped so a normal
-	// text diff doesn't grow this without bound.
+	// DFS pointers are multi-line JSON, so accumulate added-line content up
+	// to the size cap and try a single parse on exit.
 	var dfsBuf strings.Builder
 	dfsOverflowed := false
 	defer func() {
@@ -1088,9 +1086,7 @@ func parseHunks(ctx context.Context, curFile *DiffFile, maxLines, maxLineCharact
 				}
 			}
 
-			// Feed the DFS-pointer accumulator from the added-line content
-			// (strip the leading '+'). Stop once we exceed the pointer size
-			// cap — beyond that it can't be a pointer.
+			// Strip the leading '+' and feed the DFS-pointer accumulator.
 			if !dfsOverflowed && len(lineBytes) > 1 {
 				if dfsBuf.Len()+len(lineBytes) > dfs.MetaFileMaxSize {
 					dfsOverflowed = true

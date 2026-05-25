@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 // Package dfs implements gitea's server-side surface for the git-dfs
-// integration. Unlike the LFS service, this package does NOT host object
-// bytes — those live on a separate xet-server. Today the only handler here
-// is the URL-discovery endpoint; auth + transfer-token endpoints arrive in
-// later milestones (M-gitea-3, M-gitea-4).
+// integration. It does NOT host object bytes — those live on a separate
+// xet-server.
 package dfs
 
 import (
@@ -21,21 +19,13 @@ import (
 	"code.gitea.io/gitea/services/context"
 )
 
-// DiscoveryResponse is what `GET /{owner}/{repo}.git/info/dfs` returns when
-// DFS is enabled. Clients (git-dfs) read `server_url` and use it as their
-// `dfs.serverUrl`, then go directly to xet-server for CAS calls.
 type DiscoveryResponse struct {
-	// ServerURL is the public base URL of the xet-server, no trailing slash.
 	ServerURL string `json:"server_url"`
 }
 
-// DiscoveryHandler serves the URL-discovery endpoint. Behavior:
-//   - 404 if DFS is globally disabled (the route mount also guards this, but
-//     keeping the check here makes the handler safe to call directly in tests).
-//   - 404 if the repo doesn't exist OR the caller lacks read access on its
-//     code unit — same shape as gitea's other repo endpoints, doesn't leak
-//     existence of private repos to anonymous probes.
-//   - 200 with `{"server_url": "..."}` otherwise.
+// DiscoveryHandler serves GET /{owner}/{repo}.git/info/dfs. Returns 404 on
+// DFS-disabled, missing repo, or no read access — matching gitea's other repo
+// endpoints so anonymous probes can't tell private repos exist.
 func DiscoveryHandler(ctx *context.Context) {
 	if !setting.DFS.Enabled {
 		ctx.HTTPError(http.StatusNotFound)
@@ -47,7 +37,6 @@ func DiscoveryHandler(ctx *context.Context) {
 
 	repository, err := repo_model.GetRepositoryByOwnerAndName(ctx, ownerName, repoName)
 	if err != nil {
-		// includes ErrRepoNotExist — treat both as 404 to avoid existence leaks.
 		ctx.HTTPError(http.StatusNotFound)
 		return
 	}

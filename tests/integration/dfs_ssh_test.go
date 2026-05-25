@@ -25,11 +25,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// withDFSEnabledOnDisk writes the `[dfs]` block to the test config file so a
-// spawned `gitea serv` subprocess reads it, AND mocks the in-process
-// settings so the parent test sees the same values. The JWT secret is the
-// shared LFS_JWT_SECRET (DFS reuses LFS's token machinery). Returns a
-// cleanup that restores both.
+// withDFSEnabledOnDisk writes the [dfs] block to the test config so a spawned
+// `gitea serv` subprocess reads it, and mocks in-process settings so the
+// parent test sees the same values.
 func withDFSEnabledOnDisk(t *testing.T, serverURL string, ttl time.Duration) func() {
 	t.Helper()
 	cfg, err := setting.CfgProvider.PrepareSaving()
@@ -59,8 +57,6 @@ func withDFSEnabledOnDisk(t *testing.T, serverURL string, ttl time.Duration) fun
 	}
 }
 
-// sshDFSCommand returns an exec.Cmd that runs the given remote command via
-// the test's SSH key and gitea's embedded SSH server.
 func sshDFSCommand(keyFile, remoteCmd string) *exec.Cmd {
 	return exec.Command("ssh",
 		"-p", strconv.Itoa(setting.SSH.ListenPort),
@@ -73,10 +69,6 @@ func sshDFSCommand(keyFile, remoteCmd string) *exec.Cmd {
 	)
 }
 
-// Exercises `ssh git@gitea git-dfs-authenticate <repo> <op>` end-to-end
-// through gitea's embedded SSH server. The returned bearer must round-trip
-// through /-/dfs/check_access so the SSH-issued JWT path matches what
-// xet-server will receive.
 func TestDFSSSHAuthenticate(t *testing.T) {
 	onGiteaRun(t, func(t *testing.T, u *url.URL) {
 		if _, err := exec.LookPath("ssh"); err != nil {
@@ -127,7 +119,6 @@ func TestDFSSSHAuthenticate(t *testing.T) {
 	})
 }
 
-// Bad op should exit non-zero before minting anything.
 func TestDFSSSHAuthenticate_BadOp(t *testing.T) {
 	onGiteaRun(t, func(t *testing.T, u *url.URL) {
 		if _, err := exec.LookPath("ssh"); err != nil {

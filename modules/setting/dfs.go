@@ -10,17 +10,10 @@ import (
 	"code.gitea.io/gitea/modules/log"
 )
 
-// DFS holds the server-side configuration for the git-dfs integration.
-// Unlike LFS, gitea does NOT host the object bytes — they live on a separate
-// xet-server. Gitea's role is authz upstream + URL discovery.
-//
-// Pairs with the `[dfs]` section in app.ini.
+// DFS holds the git-dfs integration config. Bytes live on a separate
+// xet-server; gitea handles URL discovery and upstream authz.
 var DFS = struct {
-	// Enabled gates the discovery endpoint (and all later DFS routes). If
-	// false, gitea behaves as if DFS doesn't exist.
-	Enabled bool `ini:"ENABLED"`
-	// ServerURL is the public base URL of the xet-server the client should
-	// hit for CAS operations. Returned verbatim from the discovery endpoint.
+	Enabled   bool   `ini:"ENABLED"`
 	ServerURL string `ini:"SERVER_URL"`
 }{}
 
@@ -40,9 +33,8 @@ func loadDFSFrom(rootCfg ConfigProvider) {
 		DFS.Enabled = false
 		return
 	}
-	// DFS reuses the LFS JWT secret (HS256 short-lived bearers, same shape).
-	// LFS's loader skipped secret generation when LFS.StartServer is off — do
-	// it now so DFS can mint/verify regardless of whether LFS is hosting.
+	// DFS reuses the LFS JWT secret. LFS's loader skipped secret generation
+	// when StartServer is off — do it now so DFS can mint/verify standalone.
 	if InstallLock && len(LFS.JWTSecretBytes) == 0 {
 		if err := loadLFSJWTSecret(rootCfg); err != nil {
 			log.Error("[dfs] failed to load shared LFS JWT secret: %v. Disabling DFS.", err)

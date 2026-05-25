@@ -15,36 +15,22 @@ import (
 )
 
 const (
-	// MetaFileMaxSize is the soft cap on a DFS pointer file size. Real pointers
-	// are ~150 bytes; anything larger is almost certainly a non-pointer blob.
-	// Matches `POINTER_MAX_BYTES` in `crates/git-dfs/src/pointer.rs`.
+	// Real pointers are ~150 bytes; anything larger is not a pointer. Matches
+	// POINTER_MAX_BYTES in crates/git-dfs/src/pointer.rs.
 	MetaFileMaxSize = 4096
 
-	// MetaFileSentinel is the cheap pre-check before JSON parsing — DFS
-	// pointers always contain this key near the start. Avoids running
-	// json.Unmarshal on every small text blob.
+	// Cheap pre-check before JSON parsing.
 	MetaFileSentinel = `"hash"`
 )
 
 var (
-	// ErrMissingSentinel occurs when a buffer doesn't contain the DFS pointer
-	// sentinel and so isn't worth parsing as JSON.
-	ErrMissingSentinel = errors.New("content lacks the DFS pointer sentinel")
-
-	// ErrInvalidStructure occurs when the JSON parses but the resulting
-	// pointer fields fail the basic shape checks.
+	ErrMissingSentinel  = errors.New("content lacks the DFS pointer sentinel")
 	ErrInvalidStructure = errors.New("content has an invalid DFS pointer structure")
-
-	// ErrTooLarge occurs when input exceeds MetaFileMaxSize.
-	ErrTooLarge = fmt.Errorf("input exceeds DFS pointer size cap of %d bytes", MetaFileMaxSize)
+	ErrTooLarge         = fmt.Errorf("input exceeds DFS pointer size cap of %d bytes", MetaFileMaxSize)
 )
 
-// hexPattern matches a 64-char lowercase hex string (xet hashes and sha256
-// OIDs are both 32 bytes → 64 hex chars).
 var hexPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
-// ReadPointer reads up to MetaFileMaxSize bytes from r and tries to parse the
-// result as a DFS pointer.
 func ReadPointer(r io.Reader) (Pointer, error) {
 	buf := make([]byte, MetaFileMaxSize)
 	n, err := util.ReadAtMost(r, buf)
@@ -54,9 +40,6 @@ func ReadPointer(r io.Reader) (Pointer, error) {
 	return ReadPointerFromBuffer(buf[:n])
 }
 
-// ReadPointerFromBuffer parses buf as a DFS pointer. Returns ErrMissingSentinel
-// for non-pointer content (cheap rejection), ErrTooLarge if buf overflows the
-// cap, or a JSON / shape error otherwise.
 func ReadPointerFromBuffer(buf []byte) (Pointer, error) {
 	if len(buf) > MetaFileMaxSize {
 		return Pointer{}, ErrTooLarge
@@ -74,9 +57,6 @@ func ReadPointerFromBuffer(buf []byte) (Pointer, error) {
 	return p, nil
 }
 
-// IsValid checks the pointer's shape without touching the network — hash and
-// (when present) sha256 must be 64-char lowercase hex, file_size must be
-// non-negative.
 func (p Pointer) IsValid() bool {
 	if !hexPattern.MatchString(p.Hash) {
 		return false
@@ -90,7 +70,6 @@ func (p Pointer) IsValid() bool {
 	return true
 }
 
-// LogString matches the `fmt.Stringer` style used by lfs.Pointer for log lines.
 func (p Pointer) LogString() string {
 	if p.Hash == "" && p.FileSize == 0 {
 		return "<DFSPointer empty>"

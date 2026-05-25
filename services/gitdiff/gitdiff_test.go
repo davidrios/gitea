@@ -1239,9 +1239,6 @@ D test10.txt`
 }
 
 func TestParsePatch_DFSPointer(t *testing.T) {
-	// A newly-added file whose body is a git-dfs JSON pointer.
-	// We expect the diff parser to detect this and mark the file as
-	// IsDFSFile + IsBin so the UI hides the JSON payload.
 	const diff = `diff --git a/big.bin b/big.bin
 new file mode 100644
 index 0000000..1234567
@@ -1263,9 +1260,7 @@ index 0000000..1234567
 }
 
 func TestParsePatch_NonPointerIsNotDFS(t *testing.T) {
-	// Plain text additions must not get misidentified as DFS pointers just
-	// because they happen to be small. The sentinel `"hash"` is what gates
-	// the JSON parse.
+	// Small plain-text diffs must not match — sentinel `"hash"` gates the parse.
 	const diff = `diff --git a/README.md b/README.md
 index 0000000..1234567 100644
 --- a/README.md

@@ -19,22 +19,13 @@ import (
 	"code.gitea.io/gitea/services/lfs"
 )
 
-// AuthenticateHTTPHandler is the HTTPS analog of the SSH `git-dfs-authenticate`
-// command. ctx.Doer is populated by gitea's `webAuth.AllowBasic` middleware
-// from the request's `Authorization: Basic` header (password or PAT), so this
-// handler doesn't need to touch credentials — by the time we run, the user
-// is either authenticated or anonymous.
-//
-// Wire:
+// AuthenticateHTTPHandler is the HTTPS analog of `git-dfs-authenticate`.
+// ctx.Doer is populated by webAuth.AllowBasic from the request's Basic auth
+// header, so credentials never reach this handler directly.
 //
 //	POST /{owner}/{repo}.git/info/dfs/authenticate?op=download|upload
-//	Authorization: Basic <b64(user:password-or-PAT)>
-//
-//	→ 200 git_model.LFSTokenResponse { href, header.Authorization=Bearer <jwt> }
-//	→ 401  bad / missing credentials
-//	→ 403  authenticated, but user lacks the requested scope on the repo
-//	→ 400  unknown op
-//	→ 404  DFS disabled, or repo invisible
+//	→ 200 LFSTokenResponse, 401 bad/missing creds, 403 wrong scope,
+//	  400 unknown op, 404 DFS disabled or repo invisible
 func AuthenticateHTTPHandler(ctx *context.Context) {
 	if !setting.DFS.Enabled {
 		ctx.HTTPError(http.StatusNotFound)
@@ -72,9 +63,8 @@ func AuthenticateHTTPHandler(ctx *context.Context) {
 		return
 	}
 
-	// Reuse LFS's JWT minter — same HS256 secret, same expiry, same claim
-	// shape (UserID + RepoID + Op). The JWT is repo-scoped: check_access
-	// will refuse to honor it against any other repo.
+	// Reuse LFS's JWT minter — same secret, same claim shape. check_access
+	// refuses to honor the JWT against any other repo.
 	token, err := lfs.GetLFSAuthTokenWithBearer(lfs.AuthTokenOptions{
 		Op: op, UserID: ctx.Doer.ID, RepoID: repository.ID,
 	})
