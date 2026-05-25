@@ -44,6 +44,7 @@ import (
 	"code.gitea.io/gitea/routers/web/user/setting/security"
 	auth_service "code.gitea.io/gitea/services/auth"
 	"code.gitea.io/gitea/services/context"
+	dfs_service "code.gitea.io/gitea/services/dfs"
 	"code.gitea.io/gitea/services/forms"
 
 	_ "code.gitea.io/gitea/modules/session" // to register all internal adapters
@@ -1745,6 +1746,11 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 	// git-dfs URL-discovery endpoint. Same middleware shape as LFS so basic
 	// auth is accepted; the handler enforces repo read-access scope.
 	common.AddOwnerRepoGitDFSRoutes(m, dfsServerEnabled, webAuth.AllowBasic, repo.CorsHandler(), optSignInFromAnyOrigin)
+
+	// git-dfs upstream-authz hook for xet-server's HttpAuthz. The handler
+	// gates itself on a shared secret (or warns if unset); no extra auth
+	// middleware here — the body carries the user's PAT.
+	m.Post("/-/dfs/check_access", dfsServerEnabled, dfs_service.CheckAccessHandler)
 
 	// Some users want to use "web-based git client" to access Gitea's repositories,
 	// so the CORS handler and OPTIONS method are used.

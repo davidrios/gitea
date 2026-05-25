@@ -29,6 +29,7 @@ import (
 	"code.gitea.io/gitea/modules/process"
 	repo_module "code.gitea.io/gitea/modules/repository"
 	"code.gitea.io/gitea/modules/setting"
+	"code.gitea.io/gitea/services/dfs"
 	"code.gitea.io/gitea/services/lfs"
 
 	"github.com/kballard/go-shellquote"
@@ -113,14 +114,16 @@ func handleCliResponseExtra(extra private.ResponseExtra) error {
 	return nil
 }
 
-func getAccessMode(verb, lfsVerb string) perm.AccessMode {
+func getAccessMode(verb, subVerb string) perm.AccessMode {
 	switch verb {
 	case git.CmdVerbUploadPack, git.CmdVerbUploadArchive:
 		return perm.AccessModeRead
 	case git.CmdVerbReceivePack:
 		return perm.AccessModeWrite
-	case git.CmdVerbLfsAuthenticate, git.CmdVerbLfsTransfer:
-		switch lfsVerb {
+	case git.CmdVerbLfsAuthenticate, git.CmdVerbLfsTransfer, git.CmdVerbDfsAuthenticate:
+		// DFS reuses LFS's upload/download subverb vocabulary so clients
+		// only have to learn one shape.
+		switch subVerb {
 		case git.CmdSubVerbLfsUpload:
 			return perm.AccessModeWrite
 		case git.CmdSubVerbLfsDownload:
@@ -128,7 +131,7 @@ func getAccessMode(verb, lfsVerb string) perm.AccessMode {
 		}
 	}
 	// should be unreachable
-	setting.PanicInDevOrTesting("unknown verb: %s %s", verb, lfsVerb)
+	setting.PanicInDevOrTesting("unknown verb: %s %s", verb, subVerb)
 	return perm.AccessModeNone
 }
 
@@ -230,7 +233,7 @@ func runServ(ctx context.Context, c *cli.Command) error {
 		}()
 	}
 
-	verb, lfsVerb := sshCmdArgs[0], ""
+	verb, subVerb := sshCmdArgs[0], ""
 	if !git.IsAllowedVerbForServe(verb) {
 		return fail(ctx, "Unknown git command", "Unknown git command %s", verb)
 	}
@@ -243,13 +246,25 @@ func runServ(ctx context.Context, c *cli.Command) error {
 			return fail(ctx, "LFS SSH transfer is not enabled", "")
 		}
 		if len(sshCmdArgs) > 2 {
-			lfsVerb = sshCmdArgs[2]
+			subVerb = sshCmdArgs[2]
 		}
 	}
 
-	requestedMode := getAccessMode(verb, lfsVerb)
+	if verb == git.CmdVerbDfsAuthenticate {
+		if !setting.DFS.Enabled {
+			return fail(ctx, "DFS is not enabled", "")
+		}
+		if len(sshCmdArgs) > 2 {
+			subVerb = sshCmdArgs[2]
+		}
+		if subVerb != git.CmdSubVerbLfsUpload && subVerb != git.CmdSubVerbLfsDownload {
+			return fail(ctx, "Unknown git-dfs-authenticate operation", "Expected 'upload' or 'download', got %q", subVerb)
+		}
+	}
 
-	results, extra := private.ServCommand(ctx, keyID, username, reponame, requestedMode, verb, lfsVerb)
+	requestedMode := getAccessMode(verb, subVerb)
+
+	results, extra := private.ServCommand(ctx, keyID, username, reponame, requestedMode, verb, subVerb)
 	if extra.HasError() {
 		return fail(ctx, extra.UserMsg, "ServCommand failed: %s", extra.Error)
 	}
@@ -263,18 +278,18 @@ func runServ(ctx context.Context, c *cli.Command) error {
 
 	// LFS SSH protocol
 	if verb == git.CmdVerbLfsTransfer {
-		token, err := lfs.GetLFSAuthTokenWithBearer(lfs.AuthTokenOptions{Op: lfsVerb, UserID: results.UserID, RepoID: results.RepoID})
+		token, err := lfs.GetLFSAuthTokenWithBearer(lfs.AuthTokenOptions{Op: subVerb, UserID: results.UserID, RepoID: results.RepoID})
 		if err != nil {
 			return err
 		}
-		return lfstransfer.Main(ctx, repoPath, lfsVerb, token)
+		return lfstransfer.Main(ctx, repoPath, subVerb, token)
 	}
 
 	// LFS token authentication
 	if verb == git.CmdVerbLfsAuthenticate {
 		url := fmt.Sprintf("%s%s/%s.git/info/lfs", setting.AppURL, url.PathEscape(results.OwnerName), url.PathEscape(results.RepoName))
 
-		token, err := lfs.GetLFSAuthTokenWithBearer(lfs.AuthTokenOptions{Op: lfsVerb, UserID: results.UserID, RepoID: results.RepoID})
+		token, err := lfs.GetLFSAuthTokenWithBearer(lfs.AuthTokenOptions{Op: subVerb, UserID: results.UserID, RepoID: results.RepoID})
 		if err != nil {
 			return err
 		}
@@ -289,6 +304,27 @@ func runServ(ctx context.Context, c *cli.Command) error {
 		err = enc.Encode(tokenAuthentication)
 		if err != nil {
 			return fail(ctx, "Failed to encode LFS json response", "Failed to encode LFS json response: %v", err)
+		}
+		return nil
+	}
+
+	// git-dfs token authentication. SSH user is already auth'd via pubkey;
+	// mint a short-lived gitea bearer scoped to that user and hand it back
+	// for the client to present to xet-server. The bearer round-trips
+	// through xet-server -> /-/dfs/check_access where ParseEphemeralBearer
+	// recognizes it.
+	if verb == git.CmdVerbDfsAuthenticate {
+		bearer, expiresAt, err := dfs.MintEphemeralBearer(results.UserID)
+		if err != nil {
+			return fail(ctx, "Failed to mint DFS bearer", "MintEphemeralBearer: %v", err)
+		}
+		resp := dfs.AuthenticateResponse{
+			Href:      setting.DFS.ServerURL,
+			Header:    map[string]string{"Authorization": "Bearer " + bearer},
+			ExpiresAt: expiresAt.UTC().Format("2006-01-02T15:04:05Z"),
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(&resp); err != nil {
+			return fail(ctx, "Failed to encode DFS json response", "Failed to encode DFS json response: %v", err)
 		}
 		return nil
 	}
