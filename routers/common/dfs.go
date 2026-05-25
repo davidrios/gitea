@@ -22,6 +22,9 @@ const RouterMockPointCommonDFS = "common-dfs"
 func AddOwnerRepoGitDFSRoutes(m *web.Router, middlewares ...any) {
 	m.Group("/{username}/{reponame}/info/dfs", func() {
 		m.Get("", dfs.DiscoveryHandler)
+		// HTTPS analog of the SSH `git-dfs-authenticate` command. Accepts
+		// HTTPS Basic auth, mints a short-lived gitea-signed bearer.
+		m.Post("/authenticate", dfs.AuthenticateHTTPHandler)
 		m.Any("/*", http.NotFound)
 	}, append([]any{web.RouterMockPoint(RouterMockPointCommonDFS)}, middlewares...)...)
 }

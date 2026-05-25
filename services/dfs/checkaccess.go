@@ -17,6 +17,7 @@ import (
 	"code.gitea.io/gitea/modules/json"
 	"code.gitea.io/gitea/modules/log"
 	"code.gitea.io/gitea/modules/setting"
+	auth_service "code.gitea.io/gitea/services/auth"
 	"code.gitea.io/gitea/services/context"
 )
 
@@ -132,15 +133,16 @@ func scopeToAccessMode(s string) (perm_model.AccessMode, bool) {
 	}
 }
 
-// userFromHubBearer resolves a hub_bearer string to a gitea user. Two shapes
-// are accepted:
+// userFromHubBearer resolves a hub_bearer string to a gitea user. Two
+// shapes are accepted; the user's password is NOT one of them — the HTTPS
+// password path goes through gitea's `/info/dfs/authenticate` endpoint
+// which mints a JWT, so xet-server only ever sees JWTs (or PATs) here.
 //
-//   - PAT: 40-char lowercase hex SHA1 — the HTTPS git-credential path.
-//   - Ephemeral DFS JWT (issuer `gitea-dfs`) — the SSH `git-dfs-authenticate`
-//     path. JWTs are distinguishable by containing a `.` character, which
-//     never appears in a PAT.
+//   - "<jwt>" containing `.` — gitea-minted ephemeral bearer (HTTPS authenticate or SSH).
+//   - "<40-char hex>" — a PAT presented directly (for clients that explicitly want this).
 //
-// Anything else is rejected.
+// The shapes are mutually exclusive: PATs are hex (no `.`), JWTs always
+// contain `.`, so dispatch is unambiguous.
 func userFromHubBearer(ctx *context.Context, bearer string) (*user_model.User, error) {
 	bearer = strings.TrimSpace(bearer)
 	if bearer == "" {
@@ -153,9 +155,26 @@ func userFromHubBearer(ctx *context.Context, bearer string) (*user_model.User, e
 		}
 		return user_model.GetUserByID(ctx, userID)
 	}
-	token, err := auth_model.GetAccessTokenBySHA(ctx, bearer)
+	return userFromPAT(ctx, bearer)
+}
+
+func userFromPAT(ctx *context.Context, pat string) (*user_model.User, error) {
+	token, err := auth_model.GetAccessTokenBySHA(ctx, pat)
 	if err != nil {
 		return nil, err
 	}
 	return user_model.GetUserByID(ctx, token.UID)
+}
+
+// userFromUserPass is shared with the HTTPS authenticate handler. It tries
+// the password as a PAT first (matching the LFS convention where `user:PAT`
+// is a common credential-helper shape), then falls back to a real password
+// sign-in via the configured auth source(s). Either path producing a user
+// is sufficient.
+func userFromUserPass(ctx *context.Context, username, password string) (*user_model.User, error) {
+	if u, err := userFromPAT(ctx, password); err == nil && u != nil {
+		return u, nil
+	}
+	u, _, err := auth_service.UserSignIn(ctx, username, password)
+	return u, err
 }
