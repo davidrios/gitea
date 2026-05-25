@@ -133,29 +133,22 @@ func scopeToAccessMode(s string) (perm_model.AccessMode, bool) {
 	}
 }
 
-// userFromHubBearer resolves a hub_bearer string to a gitea user. Two
-// shapes are accepted; the user's password is NOT one of them — the HTTPS
-// password path goes through gitea's `/info/dfs/authenticate` endpoint
-// which mints a JWT, so xet-server only ever sees JWTs (or PATs) here.
-//
-//   - "<jwt>" containing `.` — gitea-minted ephemeral bearer (HTTPS authenticate or SSH).
-//   - "<40-char hex>" — a PAT presented directly (for clients that explicitly want this).
-//
-// The shapes are mutually exclusive: PATs are hex (no `.`), JWTs always
-// contain `.`, so dispatch is unambiguous.
+// userFromHubBearer resolves a hub_bearer string to a gitea user. The only
+// accepted shape is a gitea-minted ephemeral JWT (issued by `/info/dfs/authenticate`
+// over HTTPS or by `git-dfs-authenticate` over SSH). The client flow always
+// trades a long-lived credential for a short-lived JWT inside gitea before
+// touching xet-server, so this is the only shape `hub_bearer` should ever
+// carry.
 func userFromHubBearer(ctx *context.Context, bearer string) (*user_model.User, error) {
 	bearer = strings.TrimSpace(bearer)
 	if bearer == "" {
 		return nil, errors.New("empty bearer")
 	}
-	if strings.Contains(bearer, ".") {
-		userID, err := ParseEphemeralBearer(bearer)
-		if err != nil {
-			return nil, err
-		}
-		return user_model.GetUserByID(ctx, userID)
+	userID, err := ParseEphemeralBearer(bearer)
+	if err != nil {
+		return nil, err
 	}
-	return userFromPAT(ctx, bearer)
+	return user_model.GetUserByID(ctx, userID)
 }
 
 func userFromPAT(ctx *context.Context, pat string) (*user_model.User, error) {
