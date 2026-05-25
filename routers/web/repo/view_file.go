@@ -216,6 +216,7 @@ func prepareFileView(ctx *context.Context, entry *git.TreeEntry) {
 	}
 
 	ctx.Data["IsLFSFile"] = fInfo.isLFSFile()
+	ctx.Data["IsDFSFile"] = fInfo.isDFSFile()
 	ctx.Data["FileSize"] = fInfo.blobOrLfsSize
 	ctx.Data["IsRepresentableAsText"] = fInfo.st.IsRepresentableAsText()
 	ctx.Data["IsExecutable"] = entry.IsExecutable()

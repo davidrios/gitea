@@ -26,6 +26,7 @@ import (
 	user_model "code.gitea.io/gitea/models/user"
 	"code.gitea.io/gitea/modules/base"
 	"code.gitea.io/gitea/modules/charset"
+	"code.gitea.io/gitea/modules/dfs"
 	"code.gitea.io/gitea/modules/fileicon"
 	"code.gitea.io/gitea/modules/git"
 	"code.gitea.io/gitea/modules/lfs"
@@ -61,11 +62,20 @@ const (
 type fileInfo struct {
 	blobOrLfsSize int64
 	lfsMeta       *lfs.Pointer
-	st            typesniffer.SniffedType
+	// dfsMeta is set when the blob is a git-dfs JSON pointer. Unlike LFS,
+	// gitea does NOT hold the underlying bytes — they live on a separate
+	// xet-server — so this is recognition-only: we render metadata in the
+	// UI but don't substitute the reader.
+	dfsMeta *dfs.Pointer
+	st      typesniffer.SniffedType
 }
 
 func (fi *fileInfo) isLFSFile() bool {
 	return fi.lfsMeta != nil && fi.lfsMeta.Oid != ""
+}
+
+func (fi *fileInfo) isDFSFile() bool {
+	return fi.dfsMeta != nil && fi.dfsMeta.Hash != ""
 }
 
 func getFileReader(ctx gocontext.Context, repoID int64, blob *git.Blob) (buf []byte, dataRc io.ReadCloser, fi *fileInfo, err error) {
@@ -83,7 +93,20 @@ func getFileReader(ctx gocontext.Context, repoID int64, blob *git.Blob) (buf []b
 	fi = &fileInfo{blobOrLfsSize: blob.Size(), st: typesniffer.DetectContentType(buf)}
 
 	// FIXME: what happens when README file is an image?
-	if !fi.st.IsText() || !setting.LFS.StartServer {
+	if !fi.st.IsText() {
+		return buf, dataRc, fi, nil
+	}
+
+	// DFS pointers are JSON, distinct from LFS's `version https://...` format,
+	// so the two checks never collide. Try DFS first because it's a cheap
+	// substring probe; an LFS pointer can't match the `"hash"` sentinel.
+	if dfsPointer, err := dfs.ReadPointerFromBuffer(buf); err == nil {
+		fi.dfsMeta = &dfsPointer
+		fi.blobOrLfsSize = dfsPointer.FileSize
+		return buf, dataRc, fi, nil
+	}
+
+	if !setting.LFS.StartServer {
 		return buf, dataRc, fi, nil
 	}
 

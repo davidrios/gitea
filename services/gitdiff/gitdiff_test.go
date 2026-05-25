@@ -1237,3 +1237,45 @@ D test10.txt`
 	assert.Equal(t, thirdReviewUpdatedFiles, thirdReview.UpdatedFiles)
 	assert.Equal(t, 1, thirdReview.GetViewedFileCount())
 }
+
+func TestParsePatch_DFSPointer(t *testing.T) {
+	// A newly-added file whose body is a git-dfs JSON pointer.
+	// We expect the diff parser to detect this and mark the file as
+	// IsDFSFile + IsBin so the UI hides the JSON payload.
+	const diff = `diff --git a/big.bin b/big.bin
+new file mode 100644
+index 0000000..1234567
+--- /dev/null
++++ b/big.bin
+@@ -0,0 +1,5 @@
++{
++  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
++  "file_size": 300000,
++  "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
++}`
+	got, err := ParsePatch(t.Context(), setting.Git.MaxGitDiffLines, setting.Git.MaxGitDiffLineCharacters, setting.Git.MaxGitDiffFiles, strings.NewReader(diff), "")
+	require.NoError(t, err)
+	require.Len(t, got.Files, 1)
+	f := got.Files[0]
+	assert.True(t, f.IsDFSFile, "expected DFS detection on pointer-shaped diff")
+	assert.True(t, f.IsBin, "DFS files should be treated as binary for diff rendering")
+	assert.Empty(t, f.Sections, "section lines should be cleared on DFS detection")
+}
+
+func TestParsePatch_NonPointerIsNotDFS(t *testing.T) {
+	// Plain text additions must not get misidentified as DFS pointers just
+	// because they happen to be small. The sentinel `"hash"` is what gates
+	// the JSON parse.
+	const diff = `diff --git a/README.md b/README.md
+index 0000000..1234567 100644
+--- a/README.md
++++ b/README.md
+@@ -1,2 +1,3 @@
+ # gitea
++## changes
+ done`
+	got, err := ParsePatch(t.Context(), setting.Git.MaxGitDiffLines, setting.Git.MaxGitDiffLineCharacters, setting.Git.MaxGitDiffFiles, strings.NewReader(diff), "")
+	require.NoError(t, err)
+	require.Len(t, got.Files, 1)
+	assert.False(t, got.Files[0].IsDFSFile)
+}
