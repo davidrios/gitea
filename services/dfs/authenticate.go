@@ -4,10 +4,10 @@
 package dfs
 
 import (
-	"encoding/base64"
 	"net/http"
 	"strings"
 
+	git_model "code.gitea.io/gitea/models/git"
 	perm_model "code.gitea.io/gitea/models/perm"
 	access_model "code.gitea.io/gitea/models/perm/access"
 	repo_model "code.gitea.io/gitea/models/repo"
@@ -16,22 +16,21 @@ import (
 	"code.gitea.io/gitea/modules/log"
 	"code.gitea.io/gitea/modules/setting"
 	"code.gitea.io/gitea/services/context"
+	"code.gitea.io/gitea/services/lfs"
 )
 
 // AuthenticateHTTPHandler is the HTTPS analog of the SSH `git-dfs-authenticate`
-// command. The client presents the user's gitea credentials via Basic auth,
-// and the handler mints the same short-lived JWT the SSH path returns,
-// scoped to that user. The credentials never leave gitea — xet-server only
-// ever sees the JWT.
+// command. ctx.Doer is populated by gitea's `webAuth.AllowBasic` middleware
+// from the request's `Authorization: Basic` header (password or PAT), so this
+// handler doesn't need to touch credentials — by the time we run, the user
+// is either authenticated or anonymous.
 //
 // Wire:
 //
 //	POST /{owner}/{repo}.git/info/dfs/authenticate?op=download|upload
 //	Authorization: Basic <b64(user:password-or-PAT)>
 //
-//	→ 200 { "href": "<xet-server URL>",
-//	        "header": { "Authorization": "Bearer <jwt>" },
-//	        "expires_at": "<RFC 3339>" }
+//	→ 200 git_model.LFSTokenResponse { href, header.Authorization=Bearer <jwt> }
 //	→ 401  bad / missing credentials
 //	→ 403  authenticated, but user lacks the requested scope on the repo
 //	→ 400  unknown op
@@ -49,14 +48,7 @@ func AuthenticateHTTPHandler(ctx *context.Context) {
 		return
 	}
 
-	username, password, ok := decodeBasic(ctx.Req.Header.Get("Authorization"))
-	if !ok {
-		ctx.Resp.Header().Set("WWW-Authenticate", `Basic realm="dfs"`)
-		ctx.HTTPError(http.StatusUnauthorized)
-		return
-	}
-	user, err := userFromUserPass(ctx, username, password)
-	if err != nil || user == nil {
+	if ctx.Doer == nil {
 		ctx.Resp.Header().Set("WWW-Authenticate", `Basic realm="dfs"`)
 		ctx.HTTPError(http.StatusUnauthorized)
 		return
@@ -69,9 +61,9 @@ func AuthenticateHTTPHandler(ctx *context.Context) {
 		ctx.HTTPError(http.StatusNotFound)
 		return
 	}
-	perm, err := access_model.GetDoerRepoPermission(ctx, repository, user)
+	perm, err := access_model.GetDoerRepoPermission(ctx, repository, ctx.Doer)
 	if err != nil {
-		log.Error("DFS authenticate: GetDoerRepoPermission(%-v, %-v): %v", repository, user, err)
+		log.Error("DFS authenticate: GetDoerRepoPermission(%-v, %-v): %v", repository, ctx.Doer, err)
 		ctx.HTTPError(http.StatusInternalServerError)
 		return
 	}
@@ -80,16 +72,21 @@ func AuthenticateHTTPHandler(ctx *context.Context) {
 		return
 	}
 
-	bearer, expiresAt, err := MintEphemeralBearer(user.ID)
+	// Reuse LFS's JWT minter — same HS256 secret, same expiry, same claim
+	// shape (UserID + RepoID + Op). The JWT is repo-scoped: check_access
+	// will refuse to honor it against any other repo.
+	token, err := lfs.GetLFSAuthTokenWithBearer(lfs.AuthTokenOptions{
+		Op: op, UserID: ctx.Doer.ID, RepoID: repository.ID,
+	})
 	if err != nil {
-		log.Error("DFS authenticate: MintEphemeralBearer: %v", err)
+		log.Error("DFS authenticate: mint JWT: %v", err)
 		ctx.HTTPError(http.StatusInternalServerError)
 		return
 	}
-	resp := AuthenticateResponse{
-		Href:      setting.DFS.ServerURL,
-		Header:    map[string]string{"Authorization": "Bearer " + bearer},
-		ExpiresAt: expiresAt.UTC().Format("2006-01-02T15:04:05Z"),
+
+	resp := git_model.LFSTokenResponse{
+		Href:   setting.DFS.ServerURL,
+		Header: map[string]string{"Authorization": token},
 	}
 	ctx.Resp.Header().Set("Content-Type", "application/json")
 	ctx.Resp.WriteHeader(http.StatusOK)
@@ -97,9 +94,6 @@ func AuthenticateHTTPHandler(ctx *context.Context) {
 		log.Error("DFS authenticate: encode response: %v", err)
 	}
 }
-
-// AuthenticateResponse is declared in token.go; both the SSH and HTTPS
-// authenticate handlers emit the same shape.
 
 func opToAccessMode(op string) (perm_model.AccessMode, bool) {
 	switch op {
@@ -110,20 +104,4 @@ func opToAccessMode(op string) (perm_model.AccessMode, bool) {
 	default:
 		return 0, false
 	}
-}
-
-func decodeBasic(authz string) (user, pass string, ok bool) {
-	rest, found := strings.CutPrefix(authz, "Basic ")
-	if !found {
-		return "", "", false
-	}
-	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(rest))
-	if err != nil {
-		return "", "", false
-	}
-	u, p, ok := strings.Cut(string(decoded), ":")
-	if !ok || u == "" {
-		return "", "", false
-	}
-	return u, p, true
 }

@@ -4,21 +4,16 @@
 package dfs
 
 import (
-	"errors"
 	"net/http"
 	"strings"
 
-	auth_model "code.gitea.io/gitea/models/auth"
 	perm_model "code.gitea.io/gitea/models/perm"
-	access_model "code.gitea.io/gitea/models/perm/access"
 	repo_model "code.gitea.io/gitea/models/repo"
-	"code.gitea.io/gitea/models/unit"
-	user_model "code.gitea.io/gitea/models/user"
 	"code.gitea.io/gitea/modules/json"
 	"code.gitea.io/gitea/modules/log"
 	"code.gitea.io/gitea/modules/setting"
-	auth_service "code.gitea.io/gitea/services/auth"
 	"code.gitea.io/gitea/services/context"
+	"code.gitea.io/gitea/services/lfs"
 )
 
 // Wire shape mirrors the contract in `crates/xet-server-authz-http/src/lib.rs`:
@@ -28,16 +23,15 @@ import (
 //	{ "hub_bearer": "...", "repo": { "repo_type": "...", "repo_id": "owner/name",
 //	                                 "revision": "..." }, "scope": "read"|"write" }
 //
-// The `hub_bearer` field is the only credential — callers prove they're
-// acting for the user by holding either that user's PAT or a gitea-issued
-// ephemeral JWT. There's no separate "I am xet-server" credential because
-// the endpoint doesn't expose anything beyond what holding a valid bearer
-// already grants via gitea's normal API.
+// `hub_bearer` is the JWT minted by the `/info/dfs/authenticate` or
+// SSH `git-dfs-authenticate` paths. Verification is delegated to
+// `lfs.HandleLFSToken`, which parses the JWT, asserts it binds to `repo`,
+// and re-checks the user's current scope on the code unit.
 //
 // Responses:
 //
 //	200 { "user_id": "<gitea-username>" }
-//	401 — unknown hub_bearer
+//	401 — unknown / invalid hub_bearer
 //	403 — known user lacks the requested scope on the repo
 //	400 — malformed body / unparseable repo_id
 type CheckAccessRequest struct {
@@ -60,10 +54,6 @@ type CheckAccessResponse struct {
 	UserID string `json:"user_id"`
 }
 
-// CheckAccessHandler is the upstream-authz hook called by xet-server's
-// `HttpAuthz::check_repo_access`. Authentication of the request itself is
-// implicit: the `hub_bearer` field must be a valid PAT or ephemeral JWT
-// that gitea recognizes for the named repo.
 func CheckAccessHandler(ctx *context.Context) {
 	if !setting.DFS.Enabled {
 		ctx.HTTPError(http.StatusNotFound)
@@ -82,12 +72,6 @@ func CheckAccessHandler(ctx *context.Context) {
 		return
 	}
 
-	user, err := userFromHubBearer(ctx, req.HubBearer)
-	if err != nil || user == nil {
-		ctx.HTTPError(http.StatusUnauthorized)
-		return
-	}
-
 	owner, name, ok := strings.Cut(req.Repo.RepoID, "/")
 	if !ok || owner == "" || name == "" {
 		ctx.HTTPError(http.StatusBadRequest, "repo_id must be 'owner/name'")
@@ -96,22 +80,24 @@ func CheckAccessHandler(ctx *context.Context) {
 
 	repository, err := repo_model.GetRepositoryByOwnerAndName(ctx, owner, name)
 	if err != nil {
-		// 403 (known user, missing access) rather than 404 — the user
-		// authenticated, just lacks visibility. Treating "unknown repo" as
-		// 403 here matches what xet-server already gets when access is
-		// denied to a real repo, so the client sees a consistent shape.
+		// 403 (known user, missing access) rather than 404 — matches what
+		// xet-server already gets when access is denied to a real repo, so
+		// the client sees a consistent shape.
 		ctx.HTTPError(http.StatusForbidden)
 		return
 	}
 
-	perm, err := access_model.GetDoerRepoPermission(ctx, repository, user)
-	if err != nil {
-		log.Error("DFS check_access: GetUserRepoPermission(%-v, %-v): %v", repository, user, err)
-		ctx.HTTPError(http.StatusInternalServerError)
-		return
-	}
-	if !perm.CanAccess(requestedMode, unit.TypeCode) {
-		ctx.HTTPError(http.StatusForbidden)
+	// HandleLFSToken does it all: parse JWT, verify signature/exp/nbf, check
+	// the JWT's RepoID matches `repository`, check the JWT's Op covers
+	// `requestedMode`, look up the user, and re-check their permission. A
+	// failure could be 401 (bad JWT) or 403 (scope mismatch); we can't
+	// distinguish without parsing the error message, so map both to 401 —
+	// caller has nothing actionable to do with the difference.
+	bearer := strings.TrimPrefix(strings.TrimSpace(req.HubBearer), "Bearer ")
+	user, err := lfs.HandleLFSToken(ctx, bearer, repository, requestedMode)
+	if err != nil || user == nil {
+		log.Trace("DFS check_access: bearer rejected for %s/%s: %v", owner, name, err)
+		ctx.HTTPError(http.StatusUnauthorized)
 		return
 	}
 
@@ -131,43 +117,4 @@ func scopeToAccessMode(s string) (perm_model.AccessMode, bool) {
 	default:
 		return 0, false
 	}
-}
-
-// userFromHubBearer resolves a hub_bearer string to a gitea user. The only
-// accepted shape is a gitea-minted ephemeral JWT (issued by `/info/dfs/authenticate`
-// over HTTPS or by `git-dfs-authenticate` over SSH). The client flow always
-// trades a long-lived credential for a short-lived JWT inside gitea before
-// touching xet-server, so this is the only shape `hub_bearer` should ever
-// carry.
-func userFromHubBearer(ctx *context.Context, bearer string) (*user_model.User, error) {
-	bearer = strings.TrimSpace(bearer)
-	if bearer == "" {
-		return nil, errors.New("empty bearer")
-	}
-	userID, err := ParseEphemeralBearer(bearer)
-	if err != nil {
-		return nil, err
-	}
-	return user_model.GetUserByID(ctx, userID)
-}
-
-func userFromPAT(ctx *context.Context, pat string) (*user_model.User, error) {
-	token, err := auth_model.GetAccessTokenBySHA(ctx, pat)
-	if err != nil {
-		return nil, err
-	}
-	return user_model.GetUserByID(ctx, token.UID)
-}
-
-// userFromUserPass is shared with the HTTPS authenticate handler. It tries
-// the password as a PAT first (matching the LFS convention where `user:PAT`
-// is a common credential-helper shape), then falls back to a real password
-// sign-in via the configured auth source(s). Either path producing a user
-// is sufficient.
-func userFromUserPass(ctx *context.Context, username, password string) (*user_model.User, error) {
-	if u, err := userFromPAT(ctx, password); err == nil && u != nil {
-		return u, nil
-	}
-	u, _, err := auth_service.UserSignIn(ctx, username, password)
-	return u, err
 }

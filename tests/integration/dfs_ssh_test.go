@@ -5,7 +5,6 @@ package integration
 
 import (
 	"bytes"
-	"encoding/base64"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	auth_model "code.gitea.io/gitea/models/auth"
+	git_model "code.gitea.io/gitea/models/git"
 	"code.gitea.io/gitea/modules/json"
 	"code.gitea.io/gitea/modules/setting"
 	"code.gitea.io/gitea/modules/test"
@@ -27,30 +27,27 @@ import (
 
 // withDFSEnabledOnDisk writes the `[dfs]` block to the test config file so a
 // spawned `gitea serv` subprocess reads it, AND mocks the in-process
-// settings so the parent test sees the same values. Returns a cleanup that
-// restores both.
-func withDFSEnabledOnDisk(t *testing.T, serverURL string, secretBytes []byte, ttl time.Duration) func() {
+// settings so the parent test sees the same values. The JWT secret is the
+// shared LFS_JWT_SECRET (DFS reuses LFS's token machinery). Returns a
+// cleanup that restores both.
+func withDFSEnabledOnDisk(t *testing.T, serverURL string, ttl time.Duration) func() {
 	t.Helper()
 	cfg, err := setting.CfgProvider.PrepareSaving()
 	require.NoError(t, err)
 	prev := map[string]string{}
-	for _, k := range []string{"ENABLED", "SERVER_URL", "EPHEMERAL_JWT_SECRET", "EPHEMERAL_BEARER_TTL"} {
+	for _, k := range []string{"ENABLED", "SERVER_URL"} {
 		prev[k] = cfg.Section("dfs").Key(k).String()
 	}
 	cfg.Section("dfs").Key("ENABLED").SetValue("true")
 	cfg.Section("dfs").Key("SERVER_URL").SetValue(serverURL)
-	cfg.Section("dfs").Key("EPHEMERAL_JWT_SECRET").SetValue(base64.RawURLEncoding.EncodeToString(secretBytes))
-	cfg.Section("dfs").Key("EPHEMERAL_BEARER_TTL").SetValue(ttl.String())
 	require.NoError(t, cfg.Save())
 
 	restoreEnabled := test.MockVariableValue(&setting.DFS.Enabled, true)
 	restoreURL := test.MockVariableValue(&setting.DFS.ServerURL, serverURL)
-	restoreJWT := test.MockVariableValue(&setting.DFS.EphemeralJWTSecretBytes, secretBytes)
-	restoreTTL := test.MockVariableValue(&setting.DFS.EphemeralBearerTTL, ttl)
+	restoreTTL := test.MockVariableValue(&setting.LFS.HTTPAuthExpiry, ttl)
 
 	return func() {
 		restoreTTL()
-		restoreJWT()
 		restoreURL()
 		restoreEnabled()
 		cfg, err := setting.CfgProvider.PrepareSaving()
@@ -77,9 +74,9 @@ func sshDFSCommand(keyFile, remoteCmd string) *exec.Cmd {
 }
 
 // Exercises `ssh git@gitea git-dfs-authenticate <repo> <op>` end-to-end
-// through gitea's embedded SSH server. The returned ephemeral bearer must
-// round-trip through /-/dfs/check_access so the SSH-issued JWT and HTTPS
-// PAT paths share the same authz seam (the whole point of Option B).
+// through gitea's embedded SSH server. The returned bearer must round-trip
+// through /-/dfs/check_access so the SSH-issued JWT path matches what
+// xet-server will receive.
 func TestDFSSSHAuthenticate(t *testing.T) {
 	onGiteaRun(t, func(t *testing.T, u *url.URL) {
 		if _, err := exec.LookPath("ssh"); err != nil {
@@ -87,8 +84,7 @@ func TestDFSSSHAuthenticate(t *testing.T) {
 		}
 
 		const xetServerURL = "https://cas.example.test"
-		secretBytes := []byte("ssh-roundtrip-test-secret-32byte")
-		defer withDFSEnabledOnDisk(t, xetServerURL, secretBytes, 5*time.Minute)()
+		defer withDFSEnabledOnDisk(t, xetServerURL, 5*time.Minute)()
 
 		apiCtx := NewAPITestContext(t, "user2", "repo1", auth_model.AccessTokenScopeWriteUser)
 
@@ -100,14 +96,13 @@ func TestDFSSSHAuthenticate(t *testing.T) {
 			cmd.Stdout, cmd.Stderr = &stdout, &stderr
 			require.NoError(t, cmd.Run(), "ssh stderr: %s", stderr.String())
 
-			var resp dfs.AuthenticateResponse
+			var resp git_model.LFSTokenResponse
 			require.NoError(t, json.Unmarshal(stdout.Bytes(), &resp), "stdout: %q", stdout.String())
 			assert.Equal(t, xetServerURL, resp.Href)
 			auth := resp.Header["Authorization"]
 			require.True(t, strings.HasPrefix(auth, "Bearer "), "Authorization must be 'Bearer <token>', got %q", auth)
 			bearer := strings.TrimPrefix(auth, "Bearer ")
 			require.NotEmpty(t, bearer)
-			require.NotEmpty(t, resp.ExpiresAt)
 
 			t.Run("BearerRoundTripsThroughCheckAccess", func(t *testing.T) {
 				defer tests.PrintCurrentTest(t)()
@@ -138,8 +133,7 @@ func TestDFSSSHAuthenticate_BadOp(t *testing.T) {
 		if _, err := exec.LookPath("ssh"); err != nil {
 			t.Skip("ssh not on PATH")
 		}
-		defer withDFSEnabledOnDisk(t, "https://cas.example.test",
-			[]byte("badop-test-secret-padded-32byte!"), 5*time.Minute)()
+		defer withDFSEnabledOnDisk(t, "https://cas.example.test", 5*time.Minute)()
 
 		apiCtx := NewAPITestContext(t, "user2", "repo1", auth_model.AccessTokenScopeWriteUser)
 		withKeyFile(t, "dfs-ssh-key-badop", func(keyFile string) {

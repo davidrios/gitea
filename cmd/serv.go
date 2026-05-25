@@ -29,7 +29,6 @@ import (
 	"code.gitea.io/gitea/modules/process"
 	repo_module "code.gitea.io/gitea/modules/repository"
 	"code.gitea.io/gitea/modules/setting"
-	"code.gitea.io/gitea/services/dfs"
 	"code.gitea.io/gitea/services/lfs"
 
 	"github.com/kballard/go-shellquote"
@@ -309,21 +308,22 @@ func runServ(ctx context.Context, c *cli.Command) error {
 	}
 
 	// git-dfs token authentication. SSH user is already auth'd via pubkey;
-	// mint a short-lived gitea bearer scoped to that user and hand it back
-	// for the client to present to xet-server. The bearer round-trips
-	// through xet-server -> /-/dfs/check_access where ParseEphemeralBearer
-	// recognizes it.
+	// mint a short-lived JWT scoped to that user + repo and hand it back
+	// for the client to present to xet-server. The same JWT shape and
+	// secret as LFS — verified later via `lfs.HandleLFSToken` inside the
+	// /-/dfs/check_access handler.
 	if verb == git.CmdVerbDfsAuthenticate {
-		bearer, expiresAt, err := dfs.MintEphemeralBearer(results.UserID)
+		token, err := lfs.GetLFSAuthTokenWithBearer(lfs.AuthTokenOptions{
+			Op: subVerb, UserID: results.UserID, RepoID: results.RepoID,
+		})
 		if err != nil {
-			return fail(ctx, "Failed to mint DFS bearer", "MintEphemeralBearer: %v", err)
+			return fail(ctx, "Failed to mint DFS bearer", "GetLFSAuthTokenWithBearer: %v", err)
 		}
-		resp := dfs.AuthenticateResponse{
-			Href:      setting.DFS.ServerURL,
-			Header:    map[string]string{"Authorization": "Bearer " + bearer},
-			ExpiresAt: expiresAt.UTC().Format("2006-01-02T15:04:05Z"),
+		resp := &git_model.LFSTokenResponse{
+			Href:   setting.DFS.ServerURL,
+			Header: map[string]string{"Authorization": token},
 		}
-		if err := json.NewEncoder(os.Stdout).Encode(&resp); err != nil {
+		if err := json.NewEncoder(os.Stdout).Encode(resp); err != nil {
 			return fail(ctx, "Failed to encode DFS json response", "Failed to encode DFS json response: %v", err)
 		}
 		return nil

@@ -74,16 +74,27 @@ func loadLFSFrom(rootCfg ConfigProvider) error {
 
 	LFS.HTTPAuthExpiry = sec.Key("LFS_HTTP_AUTH_EXPIRY").MustDuration(24 * time.Hour)
 
-	if !LFS.StartServer || !InstallLock {
+	if !InstallLock {
 		return nil
 	}
+	if !LFS.StartServer && !DFS.Enabled {
+		// Skip the secret if neither LFS nor DFS needs it. DFS reuses the
+		// LFS JWT secret so an installation can enable git-dfs without
+		// turning LFS bytes hosting on.
+		return nil
+	}
+	return loadLFSJWTSecret(rootCfg)
+}
 
+// loadLFSJWTSecret reads (or generates and persists) the HMAC key used to
+// sign LFS auth JWTs. The same key is reused by the git-dfs handlers — see
+// `loadDFSFrom`, which runs after LFS load and triggers this if DFS is on
+// but LFS is off.
+func loadLFSJWTSecret(rootCfg ConfigProvider) error {
 	jwtSecretBase64 := loadSecret(rootCfg.Section("server"), "LFS_JWT_SECRET_URI", "LFS_JWT_SECRET")
-	LFS.JWTSecretBytes, err = generate.DecodeJwtSecretBase64(jwtSecretBase64)
+	bytes, err := generate.DecodeJwtSecretBase64(jwtSecretBase64)
 	if err != nil {
-		LFS.JWTSecretBytes, jwtSecretBase64 = generate.NewJwtSecretWithBase64()
-
-		// Save secret
+		bytes, jwtSecretBase64 = generate.NewJwtSecretWithBase64()
 		saveCfg, err := rootCfg.PrepareSaving()
 		if err != nil {
 			return fmt.Errorf("error saving JWT Secret for custom config: %v", err)
@@ -94,6 +105,6 @@ func loadLFSFrom(rootCfg ConfigProvider) error {
 			return fmt.Errorf("error saving JWT Secret for custom config: %v", err)
 		}
 	}
-
+	LFS.JWTSecretBytes = bytes
 	return nil
 }
