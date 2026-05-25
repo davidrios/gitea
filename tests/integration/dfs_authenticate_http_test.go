@@ -4,7 +4,6 @@
 package integration
 
 import (
-	"encoding/base64"
 	"net/http"
 	"strings"
 	"testing"
@@ -24,27 +23,13 @@ func TestDFSAuthenticateHTTP(t *testing.T) {
 	defer tests.PrepareTestEnv(t)()
 
 	const xetURL = "https://cas.example.test"
-	const userPassword = "password" // default password for fixture users
-
-	basic := func(user, pass string) string {
-		return "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+pass))
-	}
-
-	post := func(t *testing.T, path, authz string) *http.Response {
-		t.Helper()
-		req := NewRequest(t, "POST", path)
-		if authz != "" {
-			req.Header.Set("Authorization", authz)
-		}
-		return MakeRequest(t, req, NoExpectedStatus).Result()
-	}
 
 	t.Run("Disabled returns 404", func(t *testing.T) {
 		defer tests.PrintCurrentTest(t)()
 		defer test.MockVariableValue(&setting.DFS.Enabled, false)()
 
-		resp := post(t, "/user2/repo1.git/info/dfs/authenticate?op=download", basic("user2", userPassword))
-		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+		req := NewRequest(t, "POST", "/user2/repo1.git/info/dfs/authenticate?op=download").AddBasicAuth("user2")
+		MakeRequest(t, req, http.StatusNotFound)
 	})
 
 	t.Run("Real password mints a JWT", func(t *testing.T) {
@@ -54,8 +39,8 @@ func TestDFSAuthenticateHTTP(t *testing.T) {
 		defer test.MockVariableValue(&setting.LFS.JWTSecretBytes, []byte("auth-http-test-secret-32-bytes!!"))()
 		defer test.MockVariableValue(&setting.LFS.HTTPAuthExpiry, 5*time.Minute)()
 
-		resp := post(t, "/user2/repo1.git/info/dfs/authenticate?op=download", basic("user2", userPassword))
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		req := NewRequest(t, "POST", "/user2/repo1.git/info/dfs/authenticate?op=download").AddBasicAuth("user2")
+		resp := MakeRequest(t, req, http.StatusOK)
 
 		var got git_model.LFSTokenResponse
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
@@ -69,9 +54,9 @@ func TestDFSAuthenticateHTTP(t *testing.T) {
 		defer test.MockVariableValue(&setting.DFS.ServerURL, xetURL)()
 		defer test.MockVariableValue(&setting.LFS.JWTSecretBytes, []byte("auth-http-test-secret-32-bytes!!"))()
 
-		resp := post(t, "/user2/repo1.git/info/dfs/authenticate?op=download", "")
-		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-		assert.Contains(t, resp.Header.Get("WWW-Authenticate"), "Basic")
+		req := NewRequest(t, "POST", "/user2/repo1.git/info/dfs/authenticate?op=download")
+		resp := MakeRequest(t, req, http.StatusUnauthorized)
+		assert.Contains(t, resp.Header().Get("WWW-Authenticate"), "Basic")
 	})
 
 	t.Run("Wrong password returns 401", func(t *testing.T) {
@@ -80,8 +65,8 @@ func TestDFSAuthenticateHTTP(t *testing.T) {
 		defer test.MockVariableValue(&setting.DFS.ServerURL, xetURL)()
 		defer test.MockVariableValue(&setting.LFS.JWTSecretBytes, []byte("auth-http-test-secret-32-bytes!!"))()
 
-		resp := post(t, "/user2/repo1.git/info/dfs/authenticate?op=download", basic("user2", "nope"))
-		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		req := NewRequest(t, "POST", "/user2/repo1.git/info/dfs/authenticate?op=download").AddBasicAuth("user2", "nope")
+		MakeRequest(t, req, http.StatusUnauthorized)
 	})
 
 	t.Run("Bad op returns 400", func(t *testing.T) {
@@ -90,8 +75,8 @@ func TestDFSAuthenticateHTTP(t *testing.T) {
 		defer test.MockVariableValue(&setting.DFS.ServerURL, xetURL)()
 		defer test.MockVariableValue(&setting.LFS.JWTSecretBytes, []byte("auth-http-test-secret-32-bytes!!"))()
 
-		resp := post(t, "/user2/repo1.git/info/dfs/authenticate?op=admin", basic("user2", userPassword))
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		req := NewRequest(t, "POST", "/user2/repo1.git/info/dfs/authenticate?op=admin").AddBasicAuth("user2")
+		MakeRequest(t, req, http.StatusBadRequest)
 	})
 
 	t.Run("Authenticated but write on unrelated private repo is 403", func(t *testing.T) {
@@ -102,7 +87,7 @@ func TestDFSAuthenticateHTTP(t *testing.T) {
 		defer test.MockVariableValue(&setting.LFS.JWTSecretBytes, []byte("auth-http-test-secret-32-bytes!!"))()
 		defer test.MockVariableValue(&setting.LFS.HTTPAuthExpiry, 5*time.Minute)()
 
-		resp := post(t, "/user10/repo6.git/info/dfs/authenticate?op=upload", basic("user2", userPassword))
-		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		req := NewRequest(t, "POST", "/user10/repo6.git/info/dfs/authenticate?op=upload").AddBasicAuth("user2")
+		MakeRequest(t, req, http.StatusForbidden)
 	})
 }

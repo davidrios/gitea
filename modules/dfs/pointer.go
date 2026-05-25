@@ -5,12 +5,12 @@ package dfs
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"regexp"
 
+	"code.gitea.io/gitea/modules/json"
 	"code.gitea.io/gitea/modules/util"
 )
 

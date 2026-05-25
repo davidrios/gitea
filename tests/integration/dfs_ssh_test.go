@@ -71,10 +71,6 @@ func sshDFSCommand(keyFile, remoteCmd string) *exec.Cmd {
 
 func TestDFSSSHAuthenticate(t *testing.T) {
 	onGiteaRun(t, func(t *testing.T, u *url.URL) {
-		if _, err := exec.LookPath("ssh"); err != nil {
-			t.Skip("ssh not on PATH")
-		}
-
 		const xetServerURL = "https://cas.example.test"
 		defer withDFSEnabledOnDisk(t, xetServerURL, 5*time.Minute)()
 
@@ -121,9 +117,6 @@ func TestDFSSSHAuthenticate(t *testing.T) {
 
 func TestDFSSSHAuthenticate_BadOp(t *testing.T) {
 	onGiteaRun(t, func(t *testing.T, u *url.URL) {
-		if _, err := exec.LookPath("ssh"); err != nil {
-			t.Skip("ssh not on PATH")
-		}
 		defer withDFSEnabledOnDisk(t, "https://cas.example.test", 5*time.Minute)()
 
 		apiCtx := NewAPITestContext(t, "user2", "repo1", auth_model.AccessTokenScopeWriteUser)

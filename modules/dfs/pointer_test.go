@@ -5,7 +5,6 @@ package dfs
 
 import (
 	"bytes"
-	"errors"
 	"strings"
 	"testing"
 
@@ -65,8 +64,8 @@ func TestReadPointerFromBuffer_MalformedJSON(t *testing.T) {
 	bad := `{"hash": broken`
 	_, err := ReadPointerFromBuffer([]byte(bad))
 	require.Error(t, err)
-	assert.False(t, errors.Is(err, ErrMissingSentinel))
-	assert.False(t, errors.Is(err, ErrInvalidStructure))
+	assert.NotErrorIs(t, err, ErrMissingSentinel)
+	assert.NotErrorIs(t, err, ErrInvalidStructure)
 }
 
 func TestReadPointer_FromStream(t *testing.T) {

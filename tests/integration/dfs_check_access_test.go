@@ -6,6 +6,7 @@ package integration
 import (
 	"bytes"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -50,11 +51,11 @@ func TestDFSCheckAccess(t *testing.T) {
 		return token
 	}
 
-	post := func(t *testing.T, body string) *http.Response {
+	post := func(t *testing.T, body string) *httptest.ResponseRecorder {
 		t.Helper()
 		req := NewRequestWithBody(t, "POST", "/-/dfs/check_access", bytes.NewReader([]byte(body)))
 		req.Header.Set("Content-Type", "application/json")
-		return MakeRequest(t, req, NoExpectedStatus).Result()
+		return MakeRequest(t, req, NoExpectedStatus)
 	}
 
 	body := func(hubBearer, repoID, scope string) string {
@@ -81,7 +82,7 @@ func TestDFSCheckAccess(t *testing.T) {
 		defer test.MockVariableValue(&setting.DFS.ServerURL, expectedURL)()
 
 		resp := post(t, body(user2ReadRepo1, "user2/repo1", "read"))
-		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+		assert.Equal(t, http.StatusNotFound, resp.Code)
 	})
 
 	t.Run("Read JWT on the repo it was minted for returns username", func(t *testing.T) {
@@ -89,7 +90,7 @@ func TestDFSCheckAccess(t *testing.T) {
 		defer withDFS()()
 
 		resp := post(t, body(user2ReadRepo1, "user2/repo1", "read"))
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, http.StatusOK, resp.Code)
 		var got dfs.CheckAccessResponse
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
 		assert.Equal(t, "user2", got.UserID)
@@ -100,7 +101,7 @@ func TestDFSCheckAccess(t *testing.T) {
 		defer withDFS()()
 
 		resp := post(t, body(user2WriteRepo2, "user2/repo2", "write"))
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, http.StatusOK, resp.Code)
 		var got dfs.CheckAccessResponse
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
 		assert.Equal(t, "user2", got.UserID)
@@ -111,7 +112,7 @@ func TestDFSCheckAccess(t *testing.T) {
 		defer withDFS()()
 
 		resp := post(t, body(user2ReadRepo1, "user2/repo2", "read"))
-		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		assert.Equal(t, http.StatusUnauthorized, resp.Code)
 	})
 
 	t.Run("Read-scoped JWT cannot be replayed as write", func(t *testing.T) {
@@ -119,7 +120,7 @@ func TestDFSCheckAccess(t *testing.T) {
 		defer withDFS()()
 
 		resp := post(t, body(user2ReadRepo1, "user2/repo1", "write"))
-		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		assert.Equal(t, http.StatusUnauthorized, resp.Code)
 	})
 
 	t.Run("Bad scope returns 400", func(t *testing.T) {
@@ -127,7 +128,7 @@ func TestDFSCheckAccess(t *testing.T) {
 		defer withDFS()()
 
 		resp := post(t, body(user2ReadRepo1, "user2/repo1", "admin"))
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		assert.Equal(t, http.StatusBadRequest, resp.Code)
 	})
 
 	t.Run("Bad repo_id returns 400", func(t *testing.T) {
@@ -135,7 +136,7 @@ func TestDFSCheckAccess(t *testing.T) {
 		defer withDFS()()
 
 		resp := post(t, body(user2ReadRepo1, "no-slash-here", "read"))
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		assert.Equal(t, http.StatusBadRequest, resp.Code)
 	})
 
 	t.Run("Malformed JSON returns 400", func(t *testing.T) {
@@ -143,7 +144,7 @@ func TestDFSCheckAccess(t *testing.T) {
 		defer withDFS()()
 
 		resp := post(t, `{"hub_bearer": "nope"`)
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		assert.Equal(t, http.StatusBadRequest, resp.Code)
 	})
 
 	t.Run("Nonexistent repo returns 403", func(t *testing.T) {
@@ -151,7 +152,7 @@ func TestDFSCheckAccess(t *testing.T) {
 		defer withDFS()()
 
 		resp := post(t, body(user2ReadRepo1, "user2/does-not-exist", "read"))
-		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		assert.Equal(t, http.StatusForbidden, resp.Code)
 	})
 
 	t.Run("Expired JWT is rejected", func(t *testing.T) {
@@ -167,7 +168,7 @@ func TestDFSCheckAccess(t *testing.T) {
 		require.NoError(t, err)
 
 		resp := post(t, body(token, "user2/repo1", "read"))
-		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		assert.Equal(t, http.StatusUnauthorized, resp.Code)
 	})
 
 	t.Run("JWT minted with a different secret is rejected", func(t *testing.T) {
@@ -188,6 +189,6 @@ func TestDFSCheckAccess(t *testing.T) {
 		defer withDFS()() // restore canonical jwtSecret
 
 		resp := post(t, body(token, "user2/repo1", "read"))
-		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		assert.Equal(t, http.StatusUnauthorized, resp.Code)
 	})
 }
