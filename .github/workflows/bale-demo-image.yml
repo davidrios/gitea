@@ -1,13 +1,13 @@
-name: dfs-demo-image
+name: bale-demo-image
 
-# Builds a Docker image of this fork for git-dfs demos and pushes it to GHCR
+# Builds a Docker image of this fork for git-bale demos and pushes it to GHCR
 # under ghcr.io/<owner>/gitea. The image is tagged with the branch name (so
-# `docker pull ghcr.io/<owner>/gitea:dfs-support` gives the latest build) and
+# `docker pull ghcr.io/<owner>/gitea:bale-support` gives the latest build) and
 # with the short commit SHA for traceability.
 
 on:
   push:
-    branches: [dfs-support]
+    branches: [bale-support]
   workflow_dispatch:
 
 concurrency:

@@ -1,10 +1,10 @@
 // Copyright 2026 The Gitea Authors. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-// Package dfs handles git-dfs JSON pointer files. The pointed-to bytes live on
-// a separate xet-server, not in gitea storage. Pointer format matches
-// crates/git-dfs/src/pointer.rs.
-package dfs
+// Package bale handles git-bale JSON pointer files. The pointed-to bytes live on
+// a separate baleforgit-server, not in gitea storage. Pointer format matches
+// crates/git-bale/src/pointer.rs.
+package bale
 
 type Pointer struct {
 	Hash     string `json:"hash"`

@@ -26,7 +26,7 @@ import (
 	user_model "code.gitea.io/gitea/models/user"
 	"code.gitea.io/gitea/modules/base"
 	"code.gitea.io/gitea/modules/charset"
-	"code.gitea.io/gitea/modules/dfs"
+	"code.gitea.io/gitea/modules/bale"
 	"code.gitea.io/gitea/modules/fileicon"
 	"code.gitea.io/gitea/modules/git"
 	"code.gitea.io/gitea/modules/lfs"
@@ -62,8 +62,8 @@ const (
 type fileInfo struct {
 	blobOrLfsSize int64
 	lfsMeta       *lfs.Pointer
-	// dfsMeta is recognition-only; gitea doesn't hold the underlying bytes.
-	dfsMeta *dfs.Pointer
+	// baleMeta is recognition-only; gitea doesn't hold the underlying bytes.
+	baleMeta *bale.Pointer
 	st      typesniffer.SniffedType
 }
 
@@ -71,8 +71,8 @@ func (fi *fileInfo) isLFSFile() bool {
 	return fi.lfsMeta != nil && fi.lfsMeta.Oid != ""
 }
 
-func (fi *fileInfo) isDFSFile() bool {
-	return fi.dfsMeta != nil && fi.dfsMeta.Hash != ""
+func (fi *fileInfo) isBaleFile() bool {
+	return fi.baleMeta != nil && fi.baleMeta.Hash != ""
 }
 
 func getFileReader(ctx gocontext.Context, repoID int64, blob *git.Blob) (buf []byte, dataRc io.ReadCloser, fi *fileInfo, err error) {
@@ -94,10 +94,10 @@ func getFileReader(ctx gocontext.Context, repoID int64, blob *git.Blob) (buf []b
 		return buf, dataRc, fi, nil
 	}
 
-	// DFS pointers are JSON and won't collide with LFS's `version ...` shape.
-	if dfsPointer, err := dfs.ReadPointerFromBuffer(buf); err == nil {
-		fi.dfsMeta = &dfsPointer
-		fi.blobOrLfsSize = dfsPointer.FileSize
+	// Bale pointers are JSON and won't collide with LFS's `version ...` shape.
+	if balePointer, err := bale.ReadPointerFromBuffer(buf); err == nil {
+		fi.baleMeta = &balePointer
+		fi.blobOrLfsSize = balePointer.FileSize
 		return buf, dataRc, fi, nil
 	}
 

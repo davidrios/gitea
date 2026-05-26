@@ -1,10 +1,10 @@
 // Copyright 2026 The Gitea Authors. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-// Package dfs implements gitea's server-side surface for the git-dfs
+// Package bale implements gitea's server-side surface for the git-bale
 // integration. It does NOT host object bytes — those live on a separate
-// xet-server.
-package dfs
+// baleforgit-server.
+package bale
 
 import (
 	"net/http"
@@ -23,11 +23,11 @@ type DiscoveryResponse struct {
 	ServerURL string `json:"server_url"`
 }
 
-// DiscoveryHandler serves GET /{owner}/{repo}.git/info/dfs. Returns 404 on
-// DFS-disabled, missing repo, or no read access — matching gitea's other repo
+// DiscoveryHandler serves GET /{owner}/{repo}.git/info/bale. Returns 404 on
+// Bale-disabled, missing repo, or no read access — matching gitea's other repo
 // endpoints so anonymous probes can't tell private repos exist.
 func DiscoveryHandler(ctx *context.Context) {
-	if !setting.DFS.Enabled {
+	if !setting.Bale.Enabled {
 		ctx.HTTPError(http.StatusNotFound)
 		return
 	}
@@ -43,7 +43,7 @@ func DiscoveryHandler(ctx *context.Context) {
 
 	perm, err := access_model.GetDoerRepoPermission(ctx, repository, ctx.Doer)
 	if err != nil {
-		log.Error("DFS discovery: GetDoerRepoPermission(%-v, %-v): %v", repository, ctx.Doer, err)
+		log.Error("Bale discovery: GetDoerRepoPermission(%-v, %-v): %v", repository, ctx.Doer, err)
 		ctx.HTTPError(http.StatusInternalServerError)
 		return
 	}
@@ -54,7 +54,7 @@ func DiscoveryHandler(ctx *context.Context) {
 
 	ctx.Resp.Header().Set("Content-Type", "application/json")
 	ctx.Resp.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(ctx.Resp).Encode(DiscoveryResponse{ServerURL: setting.DFS.ServerURL}); err != nil {
-		log.Error("DFS discovery: encode response: %v", err)
+	if err := json.NewEncoder(ctx.Resp).Encode(DiscoveryResponse{ServerURL: setting.Bale.ServerURL}); err != nil {
+		log.Error("Bale discovery: encode response: %v", err)
 	}
 }

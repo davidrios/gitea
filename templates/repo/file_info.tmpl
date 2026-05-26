@@ -11,7 +11,7 @@
 	{{end}}
 	{{if ne .FileSize nil}}
 		<div class="file-info-entry">
-			<span class="file-info-size">{{FileSize .FileSize}}</span>{{if .IsLFSFile}}<span class="ui label">LFS</span>{{end}}{{if .IsDFSFile}}<span class="ui label">DFS</span>{{end}}
+			<span class="file-info-size">{{FileSize .FileSize}}</span>{{if .IsLFSFile}}<span class="ui label">LFS</span>{{end}}{{if .IsBaleFile}}<span class="ui label">Bale</span>{{end}}
 		</div>
 	{{end}}
 	{{if .LFSLock}}

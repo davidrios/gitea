@@ -10,42 +10,42 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLoadDFSFrom(t *testing.T) {
-	resetDFS := func() {
-		DFS.Enabled = false
-		DFS.ServerURL = ""
+func TestLoadBaleFrom(t *testing.T) {
+	resetBale := func() {
+		Bale.Enabled = false
+		Bale.ServerURL = ""
 	}
 
 	t.Run("disabled when section is missing", func(t *testing.T) {
-		defer resetDFS()
+		defer resetBale()
 		cfg, err := NewConfigProviderFromData(``)
 		require.NoError(t, err)
-		loadDFSFrom(cfg)
-		assert.False(t, DFS.Enabled)
-		assert.Empty(t, DFS.ServerURL)
+		loadBaleFrom(cfg)
+		assert.False(t, Bale.Enabled)
+		assert.Empty(t, Bale.ServerURL)
 	})
 
 	t.Run("enabled with trailing slash trimmed", func(t *testing.T) {
-		defer resetDFS()
+		defer resetBale()
 		cfg, err := NewConfigProviderFromData(`
-[dfs]
+[bale]
 ENABLED = true
 SERVER_URL = https://cas.example.test/
 `)
 		require.NoError(t, err)
-		loadDFSFrom(cfg)
-		assert.True(t, DFS.Enabled)
-		assert.Equal(t, "https://cas.example.test", DFS.ServerURL)
+		loadBaleFrom(cfg)
+		assert.True(t, Bale.Enabled)
+		assert.Equal(t, "https://cas.example.test", Bale.ServerURL)
 	})
 
 	t.Run("force-disabled when URL is empty", func(t *testing.T) {
-		defer resetDFS()
+		defer resetBale()
 		cfg, err := NewConfigProviderFromData(`
-[dfs]
+[bale]
 ENABLED = true
 `)
 		require.NoError(t, err)
-		loadDFSFrom(cfg)
-		assert.False(t, DFS.Enabled)
+		loadBaleFrom(cfg)
+		assert.False(t, Bale.Enabled)
 	})
 }

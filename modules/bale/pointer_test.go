@@ -1,7 +1,7 @@
 // Copyright 2026 The Gitea Authors. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-package dfs
+package bale
 
 import (
 	"bytes"
@@ -85,8 +85,8 @@ func TestIsValid_EmptyPointer(t *testing.T) {
 }
 
 func TestLogString(t *testing.T) {
-	assert.Equal(t, "<DFSPointer empty>", Pointer{}.LogString())
+	assert.Equal(t, "<BalePointer empty>", Pointer{}.LogString())
 	p := Pointer{Hash: strings.Repeat("a", 64), FileSize: 9}
-	assert.Contains(t, p.LogString(), "<DFSPointer ")
+	assert.Contains(t, p.LogString(), "<BalePointer ")
 	assert.Contains(t, p.LogString(), ":9>")
 }

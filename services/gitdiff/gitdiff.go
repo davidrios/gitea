@@ -26,7 +26,7 @@ import (
 	"code.gitea.io/gitea/modules/analyze"
 	"code.gitea.io/gitea/modules/base"
 	"code.gitea.io/gitea/modules/charset"
-	"code.gitea.io/gitea/modules/dfs"
+	"code.gitea.io/gitea/modules/bale"
 	"code.gitea.io/gitea/modules/git"
 	"code.gitea.io/gitea/modules/git/attribute"
 	"code.gitea.io/gitea/modules/git/gitcmd"
@@ -442,7 +442,7 @@ type DiffFile struct {
 	IsDeleted    bool
 	IsBin        bool
 	IsLFSFile    bool
-	IsDFSFile    bool
+	IsBaleFile    bool
 	IsRenamed    bool
 	IsSubmodule  bool
 	// basic fields but for render purpose only
@@ -482,7 +482,7 @@ type DiffLimitedContent struct {
 func (diffFile *DiffFile) GetTailSectionAndLimitedContent(leftCommit, rightCommit *git.Commit) (_ *DiffSection, diffLimitedContent DiffLimitedContent) {
 	var leftLineCount, rightLineCount int
 	diffLimitedContent = DiffLimitedContent{}
-	if diffFile.IsBin || diffFile.IsLFSFile || diffFile.IsDFSFile {
+	if diffFile.IsBin || diffFile.IsLFSFile || diffFile.IsBaleFile {
 		return nil, diffLimitedContent
 	}
 	if (diffFile.Type == DiffFileDel || diffFile.Type == DiffFileChange) && leftCommit != nil {
@@ -960,20 +960,20 @@ func parseHunks(ctx context.Context, curFile *DiffFile, maxLines, maxLineCharact
 		curFileLFSPrefix  bool
 	)
 
-	// DFS pointers are multi-line JSON, so accumulate added-line content up
+	// Bale pointers are multi-line JSON, so accumulate added-line content up
 	// to the size cap and try a single parse on exit.
-	var dfsBuf strings.Builder
-	dfsOverflowed := false
+	var baleBuf strings.Builder
+	baleOverflowed := false
 	defer func() {
-		if curFile.IsLFSFile || dfsOverflowed || dfsBuf.Len() == 0 {
+		if curFile.IsLFSFile || baleOverflowed || baleBuf.Len() == 0 {
 			return
 		}
-		p, perr := dfs.ReadPointerFromBuffer([]byte(dfsBuf.String()))
+		p, perr := bale.ReadPointerFromBuffer([]byte(baleBuf.String()))
 		if perr != nil || !p.IsValid() {
 			return
 		}
 		curFile.IsBin = true
-		curFile.IsDFSFile = true
+		curFile.IsBaleFile = true
 		curFile.Sections = nil
 	}()
 
@@ -1086,13 +1086,13 @@ func parseHunks(ctx context.Context, curFile *DiffFile, maxLines, maxLineCharact
 				}
 			}
 
-			// Strip the leading '+' and feed the DFS-pointer accumulator.
-			if !dfsOverflowed && len(lineBytes) > 1 {
-				if dfsBuf.Len()+len(lineBytes) > dfs.MetaFileMaxSize {
-					dfsOverflowed = true
+			// Strip the leading '+' and feed the Bale-pointer accumulator.
+			if !baleOverflowed && len(lineBytes) > 1 {
+				if baleBuf.Len()+len(lineBytes) > bale.MetaFileMaxSize {
+					baleOverflowed = true
 				} else {
-					dfsBuf.Write(lineBytes[1:])
-					dfsBuf.WriteByte('\n')
+					baleBuf.Write(lineBytes[1:])
+					baleBuf.WriteByte('\n')
 				}
 			}
 		case '-':

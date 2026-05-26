@@ -77,14 +77,14 @@ func loadLFSFrom(rootCfg ConfigProvider) error {
 	if !InstallLock {
 		return nil
 	}
-	if !LFS.StartServer && !DFS.Enabled {
+	if !LFS.StartServer && !Bale.Enabled {
 		return nil
 	}
 	return loadLFSJWTSecret(rootCfg)
 }
 
 // loadLFSJWTSecret loads or generates the HMAC key for LFS auth JWTs. The
-// same key is reused by git-dfs (see loadDFSFrom).
+// same key is reused by git-bale (see loadBaleFrom).
 func loadLFSJWTSecret(rootCfg ConfigProvider) error {
 	jwtSecretBase64 := loadSecret(rootCfg.Section("server"), "LFS_JWT_SECRET_URI", "LFS_JWT_SECRET")
 	bytes, err := generate.DecodeJwtSecretBase64(jwtSecretBase64)

@@ -9,8 +9,8 @@ const (
 	CmdVerbReceivePack     = "git-receive-pack"
 	CmdVerbLfsAuthenticate = "git-lfs-authenticate"
 	CmdVerbLfsTransfer     = "git-lfs-transfer"
-	// No transfer verb: after this returns, the client talks to xet-server directly.
-	CmdVerbDfsAuthenticate = "git-dfs-authenticate"
+	// No transfer verb: after this returns, the client talks to baleforgit-server directly.
+	CmdVerbBaleAuthenticate = "git-bale-authenticate"
 
 	CmdSubVerbLfsUpload   = "upload"
 	CmdSubVerbLfsDownload = "download"
@@ -23,7 +23,7 @@ func IsAllowedVerbForServe(verb string) bool {
 		CmdVerbReceivePack,
 		CmdVerbLfsAuthenticate,
 		CmdVerbLfsTransfer,
-		CmdVerbDfsAuthenticate:
+		CmdVerbBaleAuthenticate:
 		return true
 	}
 	return false

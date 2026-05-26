@@ -1,7 +1,7 @@
 // Copyright 2026 The Gitea Authors. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-package dfs
+package bale
 
 import (
 	"net/http"
@@ -19,15 +19,15 @@ import (
 	"code.gitea.io/gitea/services/lfs"
 )
 
-// AuthenticateHTTPHandler is the HTTPS analog of `git-dfs-authenticate`.
+// AuthenticateHTTPHandler is the HTTPS analog of `git-bale-authenticate`.
 // ctx.Doer is populated by webAuth.AllowBasic from the request's Basic auth
 // header, so credentials never reach this handler directly.
 //
-//	POST /{owner}/{repo}.git/info/dfs/authenticate?op=download|upload
+//	POST /{owner}/{repo}.git/info/bale/authenticate?op=download|upload
 //	→ 200 LFSTokenResponse, 401 bad/missing creds, 403 wrong scope,
-//	  400 unknown op, 404 DFS disabled or repo invisible
+//	  400 unknown op, 404 Bale disabled or repo invisible
 func AuthenticateHTTPHandler(ctx *context.Context) {
-	if !setting.DFS.Enabled {
+	if !setting.Bale.Enabled {
 		ctx.HTTPError(http.StatusNotFound)
 		return
 	}
@@ -40,7 +40,7 @@ func AuthenticateHTTPHandler(ctx *context.Context) {
 	}
 
 	if ctx.Doer == nil {
-		ctx.Resp.Header().Set("WWW-Authenticate", `Basic realm="dfs"`)
+		ctx.Resp.Header().Set("WWW-Authenticate", `Basic realm="bale"`)
 		ctx.HTTPError(http.StatusUnauthorized)
 		return
 	}
@@ -54,7 +54,7 @@ func AuthenticateHTTPHandler(ctx *context.Context) {
 	}
 	perm, err := access_model.GetDoerRepoPermission(ctx, repository, ctx.Doer)
 	if err != nil {
-		log.Error("DFS authenticate: GetDoerRepoPermission(%-v, %-v): %v", repository, ctx.Doer, err)
+		log.Error("Bale authenticate: GetDoerRepoPermission(%-v, %-v): %v", repository, ctx.Doer, err)
 		ctx.HTTPError(http.StatusInternalServerError)
 		return
 	}
@@ -69,19 +69,19 @@ func AuthenticateHTTPHandler(ctx *context.Context) {
 		Op: op, UserID: ctx.Doer.ID, RepoID: repository.ID,
 	})
 	if err != nil {
-		log.Error("DFS authenticate: mint JWT: %v", err)
+		log.Error("Bale authenticate: mint JWT: %v", err)
 		ctx.HTTPError(http.StatusInternalServerError)
 		return
 	}
 
 	resp := git_model.LFSTokenResponse{
-		Href:   setting.DFS.ServerURL,
+		Href:   setting.Bale.ServerURL,
 		Header: map[string]string{"Authorization": token},
 	}
 	ctx.Resp.Header().Set("Content-Type", "application/json")
 	ctx.Resp.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(ctx.Resp).Encode(&resp); err != nil {
-		log.Error("DFS authenticate: encode response: %v", err)
+		log.Error("Bale authenticate: encode response: %v", err)
 	}
 }
 

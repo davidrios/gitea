@@ -119,8 +119,8 @@ func getAccessMode(verb, subVerb string) perm.AccessMode {
 		return perm.AccessModeRead
 	case git.CmdVerbReceivePack:
 		return perm.AccessModeWrite
-	case git.CmdVerbLfsAuthenticate, git.CmdVerbLfsTransfer, git.CmdVerbDfsAuthenticate:
-		// DFS reuses LFS's upload/download subverb vocabulary.
+	case git.CmdVerbLfsAuthenticate, git.CmdVerbLfsTransfer, git.CmdVerbBaleAuthenticate:
+		// Bale reuses LFS's upload/download subverb vocabulary.
 		switch subVerb {
 		case git.CmdSubVerbLfsUpload:
 			return perm.AccessModeWrite
@@ -248,15 +248,15 @@ func runServ(ctx context.Context, c *cli.Command) error {
 		}
 	}
 
-	if verb == git.CmdVerbDfsAuthenticate {
-		if !setting.DFS.Enabled {
-			return fail(ctx, "DFS is not enabled", "")
+	if verb == git.CmdVerbBaleAuthenticate {
+		if !setting.Bale.Enabled {
+			return fail(ctx, "Bale is not enabled", "")
 		}
 		if len(sshCmdArgs) > 2 {
 			subVerb = sshCmdArgs[2]
 		}
 		if subVerb != git.CmdSubVerbLfsUpload && subVerb != git.CmdSubVerbLfsDownload {
-			return fail(ctx, "Unknown git-dfs-authenticate operation", "Expected 'upload' or 'download', got %q", subVerb)
+			return fail(ctx, "Unknown git-bale-authenticate operation", "Expected 'upload' or 'download', got %q", subVerb)
 		}
 	}
 
@@ -306,22 +306,22 @@ func runServ(ctx context.Context, c *cli.Command) error {
 		return nil
 	}
 
-	// git-dfs token authentication. SSH user is already auth'd via pubkey;
-	// mint a JWT for the client to present to xet-server. Same shape/secret
-	// as LFS — verified via lfs.HandleLFSToken in /-/dfs/check_access.
-	if verb == git.CmdVerbDfsAuthenticate {
+	// git-bale token authentication. SSH user is already auth'd via pubkey;
+	// mint a JWT for the client to present to baleforgit-server. Same shape/secret
+	// as LFS — verified via lfs.HandleLFSToken in /-/bale/check_access.
+	if verb == git.CmdVerbBaleAuthenticate {
 		token, err := lfs.GetLFSAuthTokenWithBearer(lfs.AuthTokenOptions{
 			Op: subVerb, UserID: results.UserID, RepoID: results.RepoID,
 		})
 		if err != nil {
-			return fail(ctx, "Failed to mint DFS bearer", "GetLFSAuthTokenWithBearer: %v", err)
+			return fail(ctx, "Failed to mint Bale bearer", "GetLFSAuthTokenWithBearer: %v", err)
 		}
 		resp := &git_model.LFSTokenResponse{
-			Href:   setting.DFS.ServerURL,
+			Href:   setting.Bale.ServerURL,
 			Header: map[string]string{"Authorization": token},
 		}
 		if err := json.NewEncoder(os.Stdout).Encode(resp); err != nil {
-			return fail(ctx, "Failed to encode DFS json response", "Failed to encode DFS json response: %v", err)
+			return fail(ctx, "Failed to encode Bale json response", "Failed to encode Bale json response: %v", err)
 		}
 		return nil
 	}

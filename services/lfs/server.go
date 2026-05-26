@@ -578,7 +578,7 @@ func authenticate(ctx *context.Context, repository *repo_model.Repository, autho
 }
 
 // HandleLFSToken is the exported entry point for handleLFSToken; reused by
-// the git-dfs check_access handler.
+// the git-bale check_access handler.
 func HandleLFSToken(ctx stdCtx.Context, tokenSHA string, target *repo_model.Repository, mode perm_model.AccessMode) (*user_model.User, error) {
 	return handleLFSToken(ctx, tokenSHA, target, mode)
 }

@@ -1,7 +1,7 @@
 // Copyright 2026 The Gitea Authors. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-package dfs
+package bale
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ import (
 
 const (
 	// Real pointers are ~150 bytes; anything larger is not a pointer. Matches
-	// POINTER_MAX_BYTES in crates/git-dfs/src/pointer.rs.
+	// POINTER_MAX_BYTES in crates/git-bale/src/pointer.rs.
 	MetaFileMaxSize = 4096
 
 	// Cheap pre-check before JSON parsing.
@@ -24,9 +24,9 @@ const (
 )
 
 var (
-	ErrMissingSentinel  = errors.New("content lacks the DFS pointer sentinel")
-	ErrInvalidStructure = errors.New("content has an invalid DFS pointer structure")
-	ErrTooLarge         = fmt.Errorf("input exceeds DFS pointer size cap of %d bytes", MetaFileMaxSize)
+	ErrMissingSentinel  = errors.New("content lacks the Bale pointer sentinel")
+	ErrInvalidStructure = errors.New("content has an invalid Bale pointer structure")
+	ErrTooLarge         = fmt.Errorf("input exceeds Bale pointer size cap of %d bytes", MetaFileMaxSize)
 )
 
 var hexPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -72,7 +72,7 @@ func (p Pointer) IsValid() bool {
 
 func (p Pointer) LogString() string {
 	if p.Hash == "" && p.FileSize == 0 {
-		return "<DFSPointer empty>"
+		return "<BalePointer empty>"
 	}
-	return fmt.Sprintf("<DFSPointer %s:%d>", p.Hash, p.FileSize)
+	return fmt.Sprintf("<BalePointer %s:%d>", p.Hash, p.FileSize)
 }

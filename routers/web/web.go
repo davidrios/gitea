@@ -44,7 +44,7 @@ import (
 	"code.gitea.io/gitea/routers/web/user/setting/security"
 	auth_service "code.gitea.io/gitea/services/auth"
 	"code.gitea.io/gitea/services/context"
-	dfs_service "code.gitea.io/gitea/services/dfs"
+	bale_service "code.gitea.io/gitea/services/bale"
 	"code.gitea.io/gitea/services/forms"
 
 	_ "code.gitea.io/gitea/modules/session" // to register all internal adapters
@@ -387,8 +387,8 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		}
 	}
 
-	dfsServerEnabled := func(ctx *context.Context) {
-		if !setting.DFS.Enabled {
+	baleServerEnabled := func(ctx *context.Context) {
+		if !setting.Bale.Enabled {
 			ctx.HTTPError(http.StatusNotFound)
 			return
 		}
@@ -1743,11 +1743,11 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 	// pattern: "/{username}/{reponame}/{lfs-paths}": git-lfs support, see also addOwnerRepoGitHTTPRouters
 	common.AddOwnerRepoGitLFSRoutes(m, lfsServerEnabled, webAuth.AllowBasic, repo.CorsHandler(), optSignInFromAnyOrigin)
 
-	common.AddOwnerRepoGitDFSRoutes(m, dfsServerEnabled, webAuth.AllowBasic, repo.CorsHandler(), optSignInFromAnyOrigin)
+	common.AddOwnerRepoGitBaleRoutes(m, baleServerEnabled, webAuth.AllowBasic, repo.CorsHandler(), optSignInFromAnyOrigin)
 
-	// xet-server posts here to authorize a client's JWT. No auth middleware:
+	// baleforgit-server posts here to authorize a client's JWT. No auth middleware:
 	// the body carries the gitea-minted bearer.
-	m.Post("/-/dfs/check_access", dfsServerEnabled, dfs_service.CheckAccessHandler)
+	m.Post("/-/bale/check_access", baleServerEnabled, bale_service.CheckAccessHandler)
 
 	// Some users want to use "web-based git client" to access Gitea's repositories,
 	// so the CORS handler and OPTIONS method are used.

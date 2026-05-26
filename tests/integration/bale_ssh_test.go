@@ -18,30 +18,30 @@ import (
 	"code.gitea.io/gitea/modules/json"
 	"code.gitea.io/gitea/modules/setting"
 	"code.gitea.io/gitea/modules/test"
-	"code.gitea.io/gitea/services/dfs"
+	"code.gitea.io/gitea/services/bale"
 	"code.gitea.io/gitea/tests"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// withDFSEnabledOnDisk writes the [dfs] block to the test config so a spawned
+// withBaleEnabledOnDisk writes the [bale] block to the test config so a spawned
 // `gitea serv` subprocess reads it, and mocks in-process settings so the
 // parent test sees the same values.
-func withDFSEnabledOnDisk(t *testing.T, serverURL string, ttl time.Duration) func() {
+func withBaleEnabledOnDisk(t *testing.T, serverURL string, ttl time.Duration) func() {
 	t.Helper()
 	cfg, err := setting.CfgProvider.PrepareSaving()
 	require.NoError(t, err)
 	prev := map[string]string{}
 	for _, k := range []string{"ENABLED", "SERVER_URL"} {
-		prev[k] = cfg.Section("dfs").Key(k).String()
+		prev[k] = cfg.Section("bale").Key(k).String()
 	}
-	cfg.Section("dfs").Key("ENABLED").SetValue("true")
-	cfg.Section("dfs").Key("SERVER_URL").SetValue(serverURL)
+	cfg.Section("bale").Key("ENABLED").SetValue("true")
+	cfg.Section("bale").Key("SERVER_URL").SetValue(serverURL)
 	require.NoError(t, cfg.Save())
 
-	restoreEnabled := test.MockVariableValue(&setting.DFS.Enabled, true)
-	restoreURL := test.MockVariableValue(&setting.DFS.ServerURL, serverURL)
+	restoreEnabled := test.MockVariableValue(&setting.Bale.Enabled, true)
+	restoreURL := test.MockVariableValue(&setting.Bale.ServerURL, serverURL)
 	restoreTTL := test.MockVariableValue(&setting.LFS.HTTPAuthExpiry, ttl)
 
 	return func() {
@@ -51,13 +51,13 @@ func withDFSEnabledOnDisk(t *testing.T, serverURL string, ttl time.Duration) fun
 		cfg, err := setting.CfgProvider.PrepareSaving()
 		require.NoError(t, err)
 		for k, v := range prev {
-			cfg.Section("dfs").Key(k).SetValue(v)
+			cfg.Section("bale").Key(k).SetValue(v)
 		}
 		_ = cfg.Save()
 	}
 }
 
-func sshDFSCommand(keyFile, remoteCmd string) *exec.Cmd {
+func sshBaleCommand(keyFile, remoteCmd string) *exec.Cmd {
 	return exec.Command("ssh",
 		"-p", strconv.Itoa(setting.SSH.ListenPort),
 		"-o", "UserKnownHostsFile=/dev/null",
@@ -69,17 +69,17 @@ func sshDFSCommand(keyFile, remoteCmd string) *exec.Cmd {
 	)
 }
 
-func TestDFSSSHAuthenticate(t *testing.T) {
+func TestBaleSSHAuthenticate(t *testing.T) {
 	onGiteaRun(t, func(t *testing.T, u *url.URL) {
 		const xetServerURL = "https://cas.example.test"
-		defer withDFSEnabledOnDisk(t, xetServerURL, 5*time.Minute)()
+		defer withBaleEnabledOnDisk(t, xetServerURL, 5*time.Minute)()
 
 		apiCtx := NewAPITestContext(t, "user2", "repo1", auth_model.AccessTokenScopeWriteUser)
 
 		withKeyFile(t, "dfs-ssh-key", func(keyFile string) {
 			t.Run("CreateUserKey", doAPICreateUserKey(apiCtx, "dfs-test-key", keyFile))
 
-			cmd := sshDFSCommand(keyFile, "git-dfs-authenticate user2/repo1 download")
+			cmd := sshBaleCommand(keyFile, "git-bale-authenticate user2/repo1 download")
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout, cmd.Stderr = &stdout, &stderr
 			require.NoError(t, cmd.Run(), "ssh stderr: %s", stderr.String())
@@ -94,9 +94,9 @@ func TestDFSSSHAuthenticate(t *testing.T) {
 
 			t.Run("BearerRoundTripsThroughCheckAccess", func(t *testing.T) {
 				defer tests.PrintCurrentTest(t)()
-				body, err := json.Marshal(dfs.CheckAccessRequest{
+				body, err := json.Marshal(bale.CheckAccessRequest{
 					HubBearer: bearer,
-					Repo: dfs.CheckAccessRepoRef{
+					Repo: bale.CheckAccessRepoRef{
 						RepoType: "model",
 						RepoID:   "user2/repo1",
 						Revision: "main",
@@ -104,10 +104,10 @@ func TestDFSSSHAuthenticate(t *testing.T) {
 					Scope: "read",
 				})
 				require.NoError(t, err)
-				req := NewRequestWithBody(t, "POST", "/-/dfs/check_access", bytes.NewReader(body))
+				req := NewRequestWithBody(t, "POST", "/-/bale/check_access", bytes.NewReader(body))
 				req.Header.Set("Content-Type", "application/json")
 				resp := MakeRequest(t, req, http.StatusOK)
-				var got dfs.CheckAccessResponse
+				var got bale.CheckAccessResponse
 				require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &got))
 				assert.Equal(t, "user2", got.UserID)
 			})
@@ -115,14 +115,14 @@ func TestDFSSSHAuthenticate(t *testing.T) {
 	})
 }
 
-func TestDFSSSHAuthenticate_BadOp(t *testing.T) {
+func TestBaleSSHAuthenticate_BadOp(t *testing.T) {
 	onGiteaRun(t, func(t *testing.T, u *url.URL) {
-		defer withDFSEnabledOnDisk(t, "https://cas.example.test", 5*time.Minute)()
+		defer withBaleEnabledOnDisk(t, "https://cas.example.test", 5*time.Minute)()
 
 		apiCtx := NewAPITestContext(t, "user2", "repo1", auth_model.AccessTokenScopeWriteUser)
 		withKeyFile(t, "dfs-ssh-key-badop", func(keyFile string) {
 			t.Run("CreateUserKey", doAPICreateUserKey(apiCtx, "dfs-test-key-badop", keyFile))
-			cmd := sshDFSCommand(keyFile, "git-dfs-authenticate user2/repo1 wat")
+			cmd := sshBaleCommand(keyFile, "git-bale-authenticate user2/repo1 wat")
 			assert.Error(t, cmd.Run(), "expected ssh exit non-zero for unsupported op")
 		})
 	})

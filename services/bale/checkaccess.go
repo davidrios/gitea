@@ -1,7 +1,7 @@
 // Copyright 2026 The Gitea Authors. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-package dfs
+package bale
 
 import (
 	"net/http"
@@ -16,9 +16,9 @@ import (
 	"code.gitea.io/gitea/services/lfs"
 )
 
-// Wire shape mirrors crates/xet-server-authz-http/src/lib.rs:
+// Wire shape mirrors crates/baleforgit-server-authz-http/src/lib.rs:
 //
-//	POST /-/dfs/check_access
+//	POST /-/bale/check_access
 //	{ "hub_bearer": "...", "repo": { "repo_type": "...", "repo_id": "owner/name",
 //	                                 "revision": "..." }, "scope": "read"|"write" }
 type CheckAccessRequest struct {
@@ -27,7 +27,7 @@ type CheckAccessRequest struct {
 	Scope     string             `json:"scope"`
 }
 
-// CheckAccessRepoRef matches xet-server-core's RepoRef. RepoType/Revision
+// CheckAccessRepoRef matches baleforgit-server-core's RepoRef. RepoType/Revision
 // aren't load-bearing on the gitea side but the contract round-trips them.
 type CheckAccessRepoRef struct {
 	RepoType string `json:"repo_type"`
@@ -40,7 +40,7 @@ type CheckAccessResponse struct {
 }
 
 func CheckAccessHandler(ctx *context.Context) {
-	if !setting.DFS.Enabled {
+	if !setting.Bale.Enabled {
 		ctx.HTTPError(http.StatusNotFound)
 		return
 	}
@@ -65,7 +65,7 @@ func CheckAccessHandler(ctx *context.Context) {
 
 	repository, err := repo_model.GetRepositoryByOwnerAndName(ctx, owner, name)
 	if err != nil {
-		// 403 instead of 404 to match what xet-server returns on denied access.
+		// 403 instead of 404 to match what baleforgit-server returns on denied access.
 		ctx.HTTPError(http.StatusForbidden)
 		return
 	}
@@ -77,7 +77,7 @@ func CheckAccessHandler(ctx *context.Context) {
 	bearer := strings.TrimPrefix(strings.TrimSpace(req.HubBearer), "Bearer ")
 	user, err := lfs.HandleLFSToken(ctx, bearer, repository, requestedMode)
 	if err != nil || user == nil {
-		log.Trace("DFS check_access: bearer rejected for %s/%s: %v", owner, name, err)
+		log.Trace("Bale check_access: bearer rejected for %s/%s: %v", owner, name, err)
 		ctx.HTTPError(http.StatusUnauthorized)
 		return
 	}
@@ -85,7 +85,7 @@ func CheckAccessHandler(ctx *context.Context) {
 	ctx.Resp.Header().Set("Content-Type", "application/json")
 	ctx.Resp.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(ctx.Resp).Encode(CheckAccessResponse{UserID: user.Name}); err != nil {
-		log.Error("DFS check_access: encode response: %v", err)
+		log.Error("Bale check_access: encode response: %v", err)
 	}
 }
 

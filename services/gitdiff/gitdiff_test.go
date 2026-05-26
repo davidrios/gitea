@@ -1238,7 +1238,7 @@ D test10.txt`
 	assert.Equal(t, 1, thirdReview.GetViewedFileCount())
 }
 
-func TestParsePatch_DFSPointer(t *testing.T) {
+func TestParsePatch_BalePointer(t *testing.T) {
 	const diff = `diff --git a/big.bin b/big.bin
 new file mode 100644
 index 0000000..1234567
@@ -1254,12 +1254,12 @@ index 0000000..1234567
 	require.NoError(t, err)
 	require.Len(t, got.Files, 1)
 	f := got.Files[0]
-	assert.True(t, f.IsDFSFile, "expected DFS detection on pointer-shaped diff")
-	assert.True(t, f.IsBin, "DFS files should be treated as binary for diff rendering")
-	assert.Empty(t, f.Sections, "section lines should be cleared on DFS detection")
+	assert.True(t, f.IsBaleFile, "expected Bale detection on pointer-shaped diff")
+	assert.True(t, f.IsBin, "Bale files should be treated as binary for diff rendering")
+	assert.Empty(t, f.Sections, "section lines should be cleared on Bale detection")
 }
 
-func TestParsePatch_NonPointerIsNotDFS(t *testing.T) {
+func TestParsePatch_NonPointerIsNotBale(t *testing.T) {
 	// Small plain-text diffs must not match — sentinel `"hash"` gates the parse.
 	const diff = `diff --git a/README.md b/README.md
 index 0000000..1234567 100644
@@ -1272,5 +1272,5 @@ index 0000000..1234567 100644
 	got, err := ParsePatch(t.Context(), setting.Git.MaxGitDiffLines, setting.Git.MaxGitDiffLineCharacters, setting.Git.MaxGitDiffFiles, strings.NewReader(diff), "")
 	require.NoError(t, err)
 	require.Len(t, got.Files, 1)
-	assert.False(t, got.Files[0].IsDFSFile)
+	assert.False(t, got.Files[0].IsBaleFile)
 }
