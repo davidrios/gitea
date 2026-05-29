@@ -7,8 +7,12 @@ name: bale-demo-image
 
 on:
   push:
-    branches: [bale-support]
+    branches: [bale-support, bale-support-v1.2]
   workflow_dispatch:
+    inputs:
+      hello:
+        description: Nothing
+        required: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -35,7 +39,6 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/gitea
           tags: |
             type=ref,event=branch
-            type=sha,format=short
 
       - name: Login to GHCR
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
