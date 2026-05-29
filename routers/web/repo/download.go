@@ -5,17 +5,21 @@
 package repo
 
 import (
+	"path"
 	"time"
 
 	auth_model "code.gitea.io/gitea/models/auth"
 	git_model "code.gitea.io/gitea/models/git"
+	"code.gitea.io/gitea/modules/bale"
 	"code.gitea.io/gitea/modules/git"
 	"code.gitea.io/gitea/modules/httpcache"
 	"code.gitea.io/gitea/modules/httplib"
 	"code.gitea.io/gitea/modules/lfs"
+	"code.gitea.io/gitea/modules/log"
 	"code.gitea.io/gitea/modules/setting"
 	"code.gitea.io/gitea/modules/storage"
 	"code.gitea.io/gitea/routers/common"
+	bale_service "code.gitea.io/gitea/services/bale"
 	"code.gitea.io/gitea/services/context"
 )
 
@@ -30,12 +34,26 @@ func ServeBlobOrLFS(ctx *context.Context, blob *git.Blob, lastModified *time.Tim
 		return nil
 	}
 
-	lfsPointerBuf, err := blob.GetBlobBytes(lfs.MetaFileMaxSize)
+	// Read up to bale.MetaFileMaxSize so both LFS (~1024 cap) and Bale (~4096 cap)
+	// pointers fit in a single read.
+	pointerBuf, err := blob.GetBlobBytes(bale.MetaFileMaxSize)
 	if err != nil {
 		return err
 	}
 
-	pointer, _ := lfs.ReadPointerFromBuffer(lfsPointerBuf)
+	if setting.Bale.Enabled {
+		if balePtr, err := bale.ReadPointerFromBuffer(pointerBuf); err == nil {
+			redirectURL, err := bale_service.BuildDownloadRedirectURL(balePtr, ctx.Repo.Repository, ctx.Doer, path.Base(ctx.Repo.TreePath))
+			if err != nil {
+				log.Error("Bale download: build redirect URL: %v", err)
+				return err
+			}
+			ctx.Redirect(redirectURL)
+			return nil
+		}
+	}
+
+	pointer, _ := lfs.ReadPointerFromBuffer(pointerBuf)
 	if pointer.IsValid() {
 		meta, _ := git_model.GetLFSMetaObjectByOid(ctx, ctx.Repo.Repository.ID, pointer.Oid)
 		if meta == nil {

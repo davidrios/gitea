@@ -9,6 +9,8 @@ const (
 	CmdVerbReceivePack     = "git-receive-pack"
 	CmdVerbLfsAuthenticate = "git-lfs-authenticate"
 	CmdVerbLfsTransfer     = "git-lfs-transfer"
+	// No transfer verb: after this returns, the client talks to baleforgit-server directly.
+	CmdVerbBaleAuthenticate = "git-bale-authenticate"
 
 	CmdSubVerbLfsUpload   = "upload"
 	CmdSubVerbLfsDownload = "download"
@@ -20,7 +22,8 @@ func IsAllowedVerbForServe(verb string) bool {
 		CmdVerbUploadArchive,
 		CmdVerbReceivePack,
 		CmdVerbLfsAuthenticate,
-		CmdVerbLfsTransfer:
+		CmdVerbLfsTransfer,
+		CmdVerbBaleAuthenticate:
 		return true
 	}
 	return false

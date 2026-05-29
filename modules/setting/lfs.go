@@ -74,16 +74,22 @@ func loadLFSFrom(rootCfg ConfigProvider) error {
 
 	LFS.HTTPAuthExpiry = sec.Key("LFS_HTTP_AUTH_EXPIRY").MustDuration(24 * time.Hour)
 
-	if !LFS.StartServer || !InstallLock {
+	if !InstallLock {
 		return nil
 	}
+	if !LFS.StartServer && !Bale.Enabled {
+		return nil
+	}
+	return loadLFSJWTSecret(rootCfg)
+}
 
+// loadLFSJWTSecret loads or generates the HMAC key for LFS auth JWTs. The
+// same key is reused by git-bale (see loadBaleFrom).
+func loadLFSJWTSecret(rootCfg ConfigProvider) error {
 	jwtSecretBase64 := loadSecret(rootCfg.Section("server"), "LFS_JWT_SECRET_URI", "LFS_JWT_SECRET")
-	LFS.JWTSecretBytes, err = generate.DecodeJwtSecretBase64(jwtSecretBase64)
+	bytes, err := generate.DecodeJwtSecretBase64(jwtSecretBase64)
 	if err != nil {
-		LFS.JWTSecretBytes, jwtSecretBase64 = generate.NewJwtSecretWithBase64()
-
-		// Save secret
+		bytes, jwtSecretBase64 = generate.NewJwtSecretWithBase64()
 		saveCfg, err := rootCfg.PrepareSaving()
 		if err != nil {
 			return fmt.Errorf("error saving JWT Secret for custom config: %v", err)
@@ -94,6 +100,6 @@ func loadLFSFrom(rootCfg ConfigProvider) error {
 			return fmt.Errorf("error saving JWT Secret for custom config: %v", err)
 		}
 	}
-
+	LFS.JWTSecretBytes = bytes
 	return nil
 }

@@ -25,6 +25,11 @@
 			{{ctx.Locale.Tr "packages.title"}}
 		</a>
 		{{end}}
+		{{if .BaleEnabled}}
+		<a class="{{if .PageIsSettingsBale}}active {{end}}item" href="{{.OrgLink}}/settings/bale">
+			{{ctx.Locale.Tr "bale.settings_nav"}}
+		</a>
+		{{end}}
 		{{if .EnableActions}}
 		<details class="item toggleable-item" {{if or .PageIsOrgSettingsActionsGeneral .PageIsSharedSettingsRunners .PageIsSharedSettingsSecrets .PageIsSharedSettingsVariables}}open{{end}}>
 			<summary>{{ctx.Locale.Tr "actions.actions"}}</summary>

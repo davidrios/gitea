@@ -68,5 +68,10 @@
 		<a class="{{if .PageIsSettingsRepos}}active {{end}}item" href="{{AppSubUrl}}/user/settings/repos">
 			{{ctx.Locale.Tr "settings.repos"}}
 		</a>
+		{{if .BaleEnabled}}
+			<a class="{{if .PageIsSettingsBale}}active {{end}}item" href="{{AppSubUrl}}/user/settings/bale">
+				{{ctx.Locale.Tr "bale.settings_nav"}}
+			</a>
+		{{end}}
 	</div>
 </div>

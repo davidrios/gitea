@@ -17,6 +17,7 @@ func SettingsCtxData(ctx *context.Context) {
 	ctx.Data["PageIsUserSettings"] = true
 	ctx.Data["EnablePackages"] = setting.Packages.Enabled
 	ctx.Data["EnableNotifyMail"] = setting.Service.EnableNotifyMail
+	ctx.Data["BaleEnabled"] = setting.Bale.Enabled
 	ctx.Data["UserDisabledFeatures"] = user_model.DisabledFeaturesWithLoginType(ctx.Doer)
 }
 

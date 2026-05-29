@@ -51,13 +51,19 @@ type Claims struct {
 	RepoID int64
 	Op     string
 	UserID int64
+	// FilenameSHA256 is set on Bale download tokens to bind the redirect to a
+	// specific filename — baleforgit-server only honors the `filename` query
+	// param when its SHA-256 matches this claim, blocking attackers from
+	// rewriting the Content-Disposition name in a leaked URL.
+	FilenameSHA256 string `json:",omitempty"`
 	jwt.RegisteredClaims
 }
 
 type AuthTokenOptions struct {
-	Op     string
-	UserID int64
-	RepoID int64
+	Op             string
+	UserID         int64
+	RepoID         int64
+	FilenameSHA256 string
 }
 
 func GetLFSAuthTokenWithBearer(opts AuthTokenOptions) (string, error) {
@@ -67,9 +73,10 @@ func GetLFSAuthTokenWithBearer(opts AuthTokenOptions) (string, error) {
 			ExpiresAt: jwt.NewNumericDate(now.Add(setting.LFS.HTTPAuthExpiry)),
 			NotBefore: jwt.NewNumericDate(now),
 		},
-		RepoID: opts.RepoID,
-		Op:     opts.Op,
-		UserID: opts.UserID,
+		RepoID:         opts.RepoID,
+		Op:             opts.Op,
+		UserID:         opts.UserID,
+		FilenameSHA256: opts.FilenameSHA256,
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
@@ -575,6 +582,12 @@ func authenticate(ctx *context.Context, repository *repo_model.Repository, autho
 	}
 	ctx.Doer = user
 	return true
+}
+
+// HandleLFSToken is the exported entry point for handleLFSToken; reused by
+// the git-bale check_access handler.
+func HandleLFSToken(ctx stdCtx.Context, tokenSHA string, target *repo_model.Repository, mode perm_model.AccessMode) (*user_model.User, error) {
+	return handleLFSToken(ctx, tokenSHA, target, mode)
 }
 
 func handleLFSToken(ctx stdCtx.Context, tokenSHA string, target *repo_model.Repository, mode perm_model.AccessMode) (*user_model.User, error) {

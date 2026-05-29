@@ -1,8 +1,11 @@
 name: release-nightly
 
+# Disabled on this fork — upstream's nightly release pipeline targets the
+# go-gitea org's S3 bucket, Docker Hub account, and signing key, none of which
+# exist here. Kept on disk (with triggers reduced to manual-only) so future
+# upstream merges still apply cleanly.
 on:
-  push:
-    branches: [main, release/v*]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
