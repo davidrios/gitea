@@ -241,6 +241,19 @@ func prepareFileView(ctx *context.Context, entry *git.TreeEntry) {
 	switch {
 	case fInfo.blobOrLfsSize >= setting.UI.MaxDisplayFileSize:
 		ctx.Data["IsFileTooLarge"] = true
+	case fInfo.isBaleFile():
+		// The bytes live on the bale-server; the browser fetches them via the
+		// /media/ token redirect (RawFileLink). Pick the inline renderer from the
+		// filename-sniffed type — never render the JSON pointer we hold in hand.
+		// Anything else falls through to the template's "view raw" link.
+		switch {
+		case fInfo.st.IsImage():
+			ctx.Data["IsImageFile"] = true
+		case fInfo.st.IsVideo():
+			ctx.Data["IsVideoFile"] = true
+		case fInfo.st.IsAudio():
+			ctx.Data["IsAudioFile"] = true
+		}
 	case handleFileViewRenderMarkup(ctx, buf, contentReader):
 	case handleFileViewRenderSource(ctx, attrs, fInfo, contentReader):
 		// it also sets ctx.Data["FileContent"] and more

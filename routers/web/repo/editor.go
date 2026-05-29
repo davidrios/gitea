@@ -303,6 +303,8 @@ func EditFile(ctx *context.Context) {
 		// Only some file types are editable online as text.
 		if fInfo.isLFSFile() {
 			ctx.Data["NotEditableReason"] = ctx.Tr("repo.editor.cannot_edit_lfs_files")
+		} else if fInfo.isBaleFile() {
+			ctx.Data["NotEditableReason"] = ctx.Tr("repo.editor.cannot_edit_bale_files")
 		} else if !fInfo.st.IsRepresentableAsText() {
 			ctx.Data["NotEditableReason"] = ctx.Tr("repo.editor.cannot_edit_non_text_files")
 		} else if fInfo.blobOrLfsSize >= setting.UI.MaxDisplayFileSize {

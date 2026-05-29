@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"path"
@@ -99,6 +100,10 @@ func getFileReader(ctx gocontext.Context, repoID int64, blob *git.Blob) (buf []b
 	if balePointer, err := bale.ReadPointerFromBuffer(buf); err == nil {
 		fi.baleMeta = &balePointer
 		fi.blobOrLfsSize = balePointer.FileSize
+		// We hold only the JSON pointer, not the bytes — the browser fetches those
+		// from the bale-server via the /media/ token redirect. Sniff the inline
+		// display type from the filename instead of the pointer content.
+		fi.st = detectTypeByFilename(blob.Name())
 		return buf, dataRc, fi, nil
 	}
 
@@ -136,6 +141,31 @@ func getFileReader(ctx gocontext.Context, repoID int64, blob *git.Blob) (buf []b
 	fi.blobOrLfsSize = meta.Pointer.Size
 	fi.lfsMeta = &meta.Pointer
 	return buf, dataRc, fi, nil
+}
+
+// baleDisplayMimeByExt covers the browser-renderable media whose extensions
+// Go's builtin mime table (and some hosts' /etc/mime.types) omit — notably
+// video/audio — so bale inline rendering is deterministic regardless of host.
+var baleDisplayMimeByExt = map[string]string{
+	".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm",
+	".ogv": "video/ogg", ".mov": "video/quicktime",
+	".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".wav": "audio/wav",
+	".ogg": "audio/ogg", ".oga": "audio/ogg", ".flac": "audio/flac",
+	".aac": "audio/aac",
+}
+
+// detectTypeByFilename picks an inline display type from a name's extension. It
+// exists for bale files, whose git content is only a JSON pointer, so the real
+// content can't be sniffed without fetching it from the bale-server.
+func detectTypeByFilename(name string) typesniffer.SniffedType {
+	ext := strings.ToLower(path.Ext(name))
+	if ct, ok := baleDisplayMimeByExt[ext]; ok {
+		return typesniffer.FromContentType(ct)
+	}
+	if ct := mime.TypeByExtension(ext); ct != "" {
+		return typesniffer.FromContentType(ct)
+	}
+	return typesniffer.FromContentType(typesniffer.MimeTypeApplicationOctetStream)
 }
 
 func loadLatestCommitData(ctx *context.Context, latestCommit *git.Commit) bool {
