@@ -12,10 +12,17 @@ import (
 
 // Bale holds the git-bale integration config. Bytes live on a separate
 // baleforgit-server; gitea handles URL discovery and upstream authz.
+//
+// ServerURL is the public/external address handed to clients (filter discovery,
+// auth Href, browser download redirects). InternalServerURL is the address gitea
+// itself dials for server-to-server calls (usage stats); it falls back to
+// ServerURL when unset, so a split is only needed when the two differ (e.g. a
+// cluster-internal hostname that browsers can't resolve).
 var Bale = struct {
-	Enabled    bool   `ini:"ENABLED"`
-	ServerURL  string `ini:"SERVER_URL"`
-	AdminToken string `ini:"ADMIN_TOKEN"`
+	Enabled           bool   `ini:"ENABLED"`
+	ServerURL         string `ini:"SERVER_URL"`
+	InternalServerURL string `ini:"INTERNAL_SERVER_URL"`
+	AdminToken        string `ini:"ADMIN_TOKEN"`
 }{}
 
 func loadBaleFrom(rootCfg ConfigProvider) {
@@ -33,6 +40,13 @@ func loadBaleFrom(rootCfg ConfigProvider) {
 		log.Warn("[bale] SERVER_URL %q is not a valid URL: %v. Disabling Bale.", Bale.ServerURL, err)
 		Bale.Enabled = false
 		return
+	}
+	Bale.InternalServerURL = strings.TrimRight(Bale.InternalServerURL, "/")
+	if Bale.InternalServerURL == "" {
+		Bale.InternalServerURL = Bale.ServerURL
+	} else if _, err := url.Parse(Bale.InternalServerURL); err != nil {
+		log.Warn("[bale] INTERNAL_SERVER_URL %q is not a valid URL: %v. Falling back to SERVER_URL.", Bale.InternalServerURL, err)
+		Bale.InternalServerURL = Bale.ServerURL
 	}
 	Bale.AdminToken = strings.TrimSpace(Bale.AdminToken)
 	if Bale.AdminToken == "" {

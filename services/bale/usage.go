@@ -79,7 +79,7 @@ func GetRepoUsage(ctx context.Context, ownerName, repoName string) (*RepoUsage, 
 // decodes the response into `out`. The 5s read/write timeout matches what's
 // reasonable for a synchronous settings-page render.
 func getJSON(ctx context.Context, path string, out any) error {
-	resp, err := httplib.NewRequest(setting.Bale.ServerURL+path, http.MethodGet).
+	resp, err := httplib.NewRequest(setting.Bale.InternalServerURL+path, http.MethodGet).
 		SetContext(ctx).
 		SetReadWriteTimeout(5*time.Second).
 		Header("Authorization", "Bearer "+setting.Bale.AdminToken).
