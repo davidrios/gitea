@@ -1254,6 +1254,7 @@
   "repo.editor.edit_file": "Edit File",
   "repo.editor.preview_changes": "Preview Changes",
   "repo.editor.cannot_edit_lfs_files": "LFS files cannot be edited in the web interface.",
+  "repo.editor.cannot_edit_bale_files": "Bale files cannot be edited in the web interface.",
   "repo.editor.cannot_edit_too_large_file": "The file is too large to be edited.",
   "repo.editor.cannot_edit_non_text_files": "Binary files cannot be edited in the web interface.",
   "repo.editor.file_not_editable_hint": "But you can still rename or move it.",
