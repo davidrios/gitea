@@ -207,7 +207,9 @@ func prepareFileView(ctx *context.Context, entry *git.TreeEntry) {
 	}
 	defer dataRc.Close()
 
-	if fInfo.isLFSFile() {
+	// LFS and Bale both need /media/ so ServeBlobOrLFS runs — /raw/ serves the
+	// pointer file as-is.
+	if fInfo.isLFSFile() || fInfo.isBaleFile() {
 		ctx.Data["RawFileLink"] = ctx.Repo.RepoLink + "/media/" + ctx.Repo.RefTypeNameSubURL() + "/" + util.PathEscapeSegments(ctx.Repo.TreePath)
 	}
 
@@ -216,6 +218,7 @@ func prepareFileView(ctx *context.Context, entry *git.TreeEntry) {
 	}
 
 	ctx.Data["IsLFSFile"] = fInfo.isLFSFile()
+	ctx.Data["IsBaleFile"] = fInfo.isBaleFile()
 	ctx.Data["FileSize"] = fInfo.blobOrLfsSize
 	ctx.Data["IsRepresentableAsText"] = fInfo.st.IsRepresentableAsText()
 	ctx.Data["IsExecutable"] = entry.IsExecutable()

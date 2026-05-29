@@ -37,6 +37,11 @@
 					{{ctx.Locale.Tr "repo.settings.lfs"}}
 				</a>
 			{{end}}
+			{{if .BaleEnabled}}
+				<a class="{{if .PageIsSettingsBale}}active {{end}}item" href="{{.RepoLink}}/settings/bale">
+					{{ctx.Locale.Tr "repo.settings.bale"}}
+				</a>
+			{{end}}
 		{{end}}
 		<details class="item toggleable-item" {{if or .PageIsSharedSettingsRunners .PageIsSharedSettingsSecrets .PageIsSharedSettingsVariables .PageIsActionsSettingsGeneral}}open{{end}}>
 			<summary>{{ctx.Locale.Tr "actions.actions"}}</summary>

@@ -1,0 +1,50 @@
+{{/* Shared by user/settings/bale and org/settings/bale. Inputs in ctx data:
+		BaleUsage      — *bale.OwnerUsage or nil when the admin token is unset
+		BaleUsageError — string error message when the bale-server call failed
+*/}}
+<h4 class="ui top attached header">
+	{{ctx.Locale.Tr "bale.usage_panel.title"}}
+</h4>
+<div class="ui attached segment">
+	<p>{{ctx.Locale.Tr "bale.usage_panel.desc"}}</p>
+	{{if .BaleUsageError}}
+		<div class="ui warning message">
+			{{ctx.Locale.Tr "bale.usage_panel.fetch_failed" .BaleUsageError}}
+		</div>
+	{{else if not .BaleUsage}}
+		<div class="ui info message">
+			{{ctx.Locale.Tr "bale.usage_panel.admin_disabled"}}
+		</div>
+	{{else if eq .BaleUsage.RawBytes 0}}
+		<div class="ui info message">
+			{{ctx.Locale.Tr "bale.usage_panel.no_files"}}
+		</div>
+	{{else}}
+		<table class="ui very basic table">
+			<tbody>
+				<tr>
+					<td><strong>{{ctx.Locale.Tr "bale.usage_panel.raw"}}</strong></td>
+					<td>{{FileSize .BaleUsage.RawBytes}}</td>
+				</tr>
+				<tr>
+					<td><strong>{{ctx.Locale.Tr "bale.usage_panel.stored"}}</strong></td>
+					<td>{{FileSize .BaleUsage.StoredBytes}}</td>
+				</tr>
+				<tr>
+					<td><strong>{{ctx.Locale.Tr "bale.usage_panel.savings"}}</strong></td>
+					<td>{{FileSize .BaleUsage.DedupSavingsBytes}}</td>
+				</tr>
+				<tr>
+					<td><strong>{{ctx.Locale.Tr "bale.usage_panel.quota"}}</strong></td>
+					<td>
+						{{if .BaleUsage.HasQuota}}
+							{{FileSize .BaleUsage.Quota}}
+						{{else}}
+							{{ctx.Locale.Tr "bale.usage_panel.quota_unlimited"}}
+						{{end}}
+					</td>
+				</tr>
+			</tbody>
+		</table>
+	{{end}}
+</div>

@@ -42,6 +42,7 @@ import (
 	user_setting "code.gitea.io/gitea/routers/web/user/setting"
 	"code.gitea.io/gitea/routers/web/user/setting/security"
 	auth_service "code.gitea.io/gitea/services/auth"
+	bale_service "code.gitea.io/gitea/services/bale"
 	"code.gitea.io/gitea/services/context"
 	"code.gitea.io/gitea/services/forms"
 
@@ -384,6 +385,13 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		}
 	}
 
+	baleServerEnabled := func(ctx *context.Context) {
+		if !setting.Bale.Enabled {
+			ctx.HTTPError(http.StatusNotFound)
+			return
+		}
+	}
+
 	federationEnabled := func(ctx *context.Context) {
 		if !setting.Federation.Enabled {
 			ctx.HTTPError(http.StatusNotFound)
@@ -705,6 +713,8 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		m.Get("/organization", user_setting.Organization)
 		m.Get("/repos", user_setting.Repos)
 		m.Post("/repos/unadopted", user_setting.AdoptOrDeleteRepository)
+
+		m.Get("/bale", user_setting.Bale)
 
 		m.Group("/hooks", func() {
 			m.Get("", user_setting.Webhooks)
@@ -1048,7 +1058,9 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 					m.Get("", org.BlockedUsers)
 					m.Post("", web.Bind(forms.BlockUserForm{}), org.BlockedUsersPost)
 				})
-			}, ctxDataSet("EnableOAuth2", setting.OAuth2.Enabled, "EnablePackages", setting.Packages.Enabled, "PageIsOrgSettings", true))
+
+				m.Get("/bale", org.Bale)
+			}, ctxDataSet("EnableOAuth2", setting.OAuth2.Enabled, "EnablePackages", setting.Packages.Enabled, "BaleEnabled", setting.Bale.Enabled, "PageIsOrgSettings", true))
 		}, context.OrgAssignment(context.OrgAssignmentOptions{RequireOwner: true}))
 	}, reqSignIn)
 	// end "/org": most org routes
@@ -1221,6 +1233,7 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 				m.Post("/{lid}/unlock", repo_setting.LFSUnlock)
 			})
 		})
+		m.Get("/bale", repo_setting.Bale)
 		m.Group("/actions/general", func() {
 			m.Get("", repo_setting.ActionsGeneralSettings)
 			m.Post("/actions_unit", repo_setting.ActionsUnitPost)
@@ -1245,7 +1258,7 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		})
 	},
 		reqSignIn, context.RepoAssignment, reqRepoAdmin,
-		ctxDataSet("PageIsRepoSettings", true, "LFSStartServer", setting.LFS.StartServer),
+		ctxDataSet("PageIsRepoSettings", true, "LFSStartServer", setting.LFS.StartServer, "BaleEnabled", setting.Bale.Enabled),
 	)
 	// end "/{username}/{reponame}/settings"
 
@@ -1726,6 +1739,12 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 	// git lfs uses its own jwt key, and it handles the token & auth by itself, it conflicts with the general "OAuth2" auth method
 	// pattern: "/{username}/{reponame}/{lfs-paths}": git-lfs support, see also addOwnerRepoGitHTTPRouters
 	common.AddOwnerRepoGitLFSRoutes(m, lfsServerEnabled, webAuth.AllowBasic, repo.CorsHandler(), optSignInFromAnyOrigin)
+
+	common.AddOwnerRepoGitBaleRoutes(m, baleServerEnabled, webAuth.AllowBasic, repo.CorsHandler(), optSignInFromAnyOrigin)
+
+	// baleforgit-server posts here to authorize a client's JWT. No auth middleware:
+	// the body carries the gitea-minted bearer.
+	m.Post("/-/bale/check_access", baleServerEnabled, bale_service.CheckAccessHandler)
 
 	// Some users want to use "web-based git client" to access Gitea's repositories,
 	// so the CORS handler and OPTIONS method are used.
