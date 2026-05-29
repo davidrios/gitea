@@ -24,6 +24,16 @@
 							<td><strong>{{ctx.Locale.Tr "repo.settings.bale_storage"}}</strong></td>
 							<td>{{FileSize .BaleUsage.RawBytes}}</td>
 						</tr>
+						<tr>
+							<td><strong>{{ctx.Locale.Tr "repo.settings.bale_exclusive_storage"}}</strong></td>
+							<td>{{FileSize .BaleUsage.ExclusiveBytes}}</td>
+						</tr>
+						{{if gt .BaleUsage.SharedBytes 0}}
+						<tr>
+							<td>{{ctx.Locale.Tr "repo.settings.bale_shared_storage"}}</td>
+							<td>{{FileSize .BaleUsage.SharedBytes}}</td>
+						</tr>
+						{{end}}
 					</tbody>
 				</table>
 			{{end}}
