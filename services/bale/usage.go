@@ -40,12 +40,26 @@ func (u *OwnerUsage) Quota() int64 {
 	return *u.QuotaBytes
 }
 
-// RepoUsage mirrors crates/bale-server-wire's RepoUsageResponse.
+// RepoUsage mirrors crates/bale-server-wire's RepoUsageResponse. ExclusiveBytes
+// is the on-disk space referenced by this repo and no same-owner sibling repo —
+// how much the owner's stored bytes drop if it were deleted; StoredBytes counts
+// every xorb the repo references, including those shared with sibling repos.
 type RepoUsage struct {
 	RepoID            string `json:"repo_id"`
 	RawBytes          int64  `json:"raw_bytes"`
 	StoredBytes       int64  `json:"stored_bytes"`
 	DedupSavingsBytes int64  `json:"dedup_savings_bytes"`
+	ExclusiveBytes    int64  `json:"exclusive_bytes"`
+}
+
+// SharedBytes is the on-disk space this repo references that another repo under
+// the same owner also references (stored minus exclusive). Clamped at 0 so a
+// server that predates exclusive_bytes can't render a negative size.
+func (u *RepoUsage) SharedBytes() int64 {
+	if u.StoredBytes <= u.ExclusiveBytes {
+		return 0
+	}
+	return u.StoredBytes - u.ExclusiveBytes
 }
 
 // UsageAvailable reports whether the usage endpoints can be called — the bale
