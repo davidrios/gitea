@@ -7,7 +7,7 @@ name: bale-demo-image
 
 on:
   push:
-    branches: [bale-support, bale-support-v1.2]
+    branches: [bale-support*]
   workflow_dispatch:
     inputs:
       hello:
