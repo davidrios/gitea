@@ -95,8 +95,20 @@ func TestBuildDownloadRedirectURL(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("Anonymous doer is rejected", func(t *testing.T) {
-		_, err := BuildDownloadRedirectURL(ptr, repo, nil, "x.bin")
-		require.Error(t, err)
+	t.Run("Anonymous doer mints a UserID 0 token", func(t *testing.T) {
+		raw, err := BuildDownloadRedirectURL(ptr, repo, nil, "x.bin")
+		require.NoError(t, err)
+
+		u, err := url.Parse(raw)
+		require.NoError(t, err)
+
+		claims := &lfs.Claims{}
+		parsed, err := jwt.ParseWithClaims(u.Query().Get("token"), claims, func(*jwt.Token) (any, error) {
+			return setting.LFS.JWTSecretBytes, nil
+		})
+		require.NoError(t, err)
+		require.True(t, parsed.Valid)
+		assert.Equal(t, int64(0), claims.UserID)
+		assert.Equal(t, "download", claims.Op)
 	})
 }

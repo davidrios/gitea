@@ -25,6 +25,10 @@ import (
 // 302 follow — accept the leakage trade-off (URL is short-lived and scoped to a
 // single repo+file).
 //
+// A nil doer mints an anonymous (UserID 0) token: the route already gates this
+// to repos the visitor can read, so anonymous browsing of a public repo's bale
+// files works without a login. check_access re-verifies public read access.
+//
 // The token carries a SHA-256 of `filename`; bale-server must reject the
 // `filename` query param unless its hash matches, so an attacker can't rewrite
 // Content-Disposition on a leaked redirect URL.
@@ -35,9 +39,6 @@ func BuildDownloadRedirectURL(p bale.Pointer, repo *repo_model.Repository, doer 
 	if setting.Bale.ServerURL == "" {
 		return "", errors.New("bale server URL is not configured")
 	}
-	if doer == nil {
-		return "", errors.New("bale download requires an authenticated user")
-	}
 
 	var filenameHash string
 	if filename != "" {
@@ -45,8 +46,13 @@ func BuildDownloadRedirectURL(p bale.Pointer, repo *repo_model.Repository, doer 
 		filenameHash = hex.EncodeToString(sum[:])
 	}
 
+	userID := int64(0)
+	if doer != nil {
+		userID = doer.ID
+	}
+
 	token, err := lfs.GetLFSAuthTokenWithBearer(lfs.AuthTokenOptions{
-		Op: "download", UserID: doer.ID, RepoID: repo.ID,
+		Op: "download", UserID: userID, RepoID: repo.ID,
 		FilenameSHA256: filenameHash,
 	})
 	if err != nil {

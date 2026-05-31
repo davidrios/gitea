@@ -107,6 +107,38 @@ func TestBaleCheckAccess(t *testing.T) {
 		assert.Equal(t, "user2", got.UserID)
 	})
 
+	t.Run("Anonymous read JWT on a public repo returns the anonymous principal", func(t *testing.T) {
+		// UserID 0 is the anonymous principal; user2/repo1 is public.
+		defer tests.PrintCurrentTest(t)()
+		defer withBale()()
+
+		anonReadRepo1 := mintFor(t, 0, repo1.ID, "download")
+		resp := post(t, body(anonReadRepo1, "user2/repo1", "read"))
+		require.Equal(t, http.StatusOK, resp.Code)
+		var got bale.CheckAccessResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
+		assert.Equal(t, bale.AnonymousUserID, got.UserID)
+	})
+
+	t.Run("Anonymous read JWT on a private repo is rejected", func(t *testing.T) {
+		// user2/repo2 is private — an anonymous principal has no read access.
+		defer tests.PrintCurrentTest(t)()
+		defer withBale()()
+
+		anonReadRepo2 := mintFor(t, 0, repo2.ID, "download")
+		resp := post(t, body(anonReadRepo2, "user2/repo2", "read"))
+		assert.Equal(t, http.StatusUnauthorized, resp.Code)
+	})
+
+	t.Run("Anonymous JWT cannot be used for write", func(t *testing.T) {
+		defer tests.PrintCurrentTest(t)()
+		defer withBale()()
+
+		anonReadRepo1 := mintFor(t, 0, repo1.ID, "download")
+		resp := post(t, body(anonReadRepo1, "user2/repo1", "write"))
+		assert.Equal(t, http.StatusUnauthorized, resp.Code)
+	})
+
 	t.Run("JWT bound to a different repo is rejected", func(t *testing.T) {
 		defer tests.PrintCurrentTest(t)()
 		defer withBale()()

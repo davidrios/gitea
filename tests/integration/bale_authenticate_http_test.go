@@ -48,13 +48,43 @@ func TestBaleAuthenticateHTTP(t *testing.T) {
 		assert.True(t, strings.HasPrefix(got.Header["Authorization"], "Bearer "))
 	})
 
-	t.Run("Missing auth returns 401 with Basic challenge", func(t *testing.T) {
+	t.Run("Anonymous download on a public repo mints a JWT", func(t *testing.T) {
+		// user2/repo1 is public, so a credential-less download is an anonymous read.
+		defer tests.PrintCurrentTest(t)()
+		defer test.MockVariableValue(&setting.Bale.Enabled, true)()
+		defer test.MockVariableValue(&setting.Bale.ServerURL, xetURL)()
+		defer test.MockVariableValue(&setting.LFS.JWTSecretBytes, []byte("auth-http-test-secret-32-bytes!!"))()
+		defer test.MockVariableValue(&setting.LFS.HTTPAuthExpiry, 5*time.Minute)()
+
+		req := NewRequest(t, "POST", "/user2/repo1.git/info/bale/authenticate?op=download")
+		resp := MakeRequest(t, req, http.StatusOK)
+
+		var got git_model.LFSTokenResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
+		assert.Equal(t, xetURL, got.Href)
+		assert.True(t, strings.HasPrefix(got.Header["Authorization"], "Bearer "))
+	})
+
+	t.Run("Anonymous download on a private repo returns 401 with Basic challenge", func(t *testing.T) {
+		// user2/repo2 is private; an anonymous read must be challenged, not granted.
 		defer tests.PrintCurrentTest(t)()
 		defer test.MockVariableValue(&setting.Bale.Enabled, true)()
 		defer test.MockVariableValue(&setting.Bale.ServerURL, xetURL)()
 		defer test.MockVariableValue(&setting.LFS.JWTSecretBytes, []byte("auth-http-test-secret-32-bytes!!"))()
 
-		req := NewRequest(t, "POST", "/user2/repo1.git/info/bale/authenticate?op=download")
+		req := NewRequest(t, "POST", "/user2/repo2.git/info/bale/authenticate?op=download")
+		resp := MakeRequest(t, req, http.StatusUnauthorized)
+		assert.Contains(t, resp.Header().Get("WWW-Authenticate"), "Basic")
+	})
+
+	t.Run("Anonymous upload is never granted", func(t *testing.T) {
+		// Even on a public repo, a credential-less upload is rejected with 401.
+		defer tests.PrintCurrentTest(t)()
+		defer test.MockVariableValue(&setting.Bale.Enabled, true)()
+		defer test.MockVariableValue(&setting.Bale.ServerURL, xetURL)()
+		defer test.MockVariableValue(&setting.LFS.JWTSecretBytes, []byte("auth-http-test-secret-32-bytes!!"))()
+
+		req := NewRequest(t, "POST", "/user2/repo1.git/info/bale/authenticate?op=upload")
 		resp := MakeRequest(t, req, http.StatusUnauthorized)
 		assert.Contains(t, resp.Header().Get("WWW-Authenticate"), "Basic")
 	})
