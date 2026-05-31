@@ -590,7 +590,50 @@ func HandleLFSToken(ctx stdCtx.Context, tokenSHA string, target *repo_model.Repo
 	return handleLFSToken(ctx, tokenSHA, target, mode)
 }
 
+// HandleBaleToken verifies a git-bale JWT like HandleLFSToken, but additionally
+// honors the anonymous principal: a claim with UserID 0 is a credential-less
+// public read minted by the bale authenticate endpoint. It is accepted only for
+// read scope and only when the repo grants read to an anonymous visitor (i.e.
+// the repo is public), so a forged anonymous claim can't reach a private repo.
+// On that path it returns (nil, true, nil); otherwise it resolves the real user
+// and returns (user, false, nil). A non-nil error means the token is rejected.
+func HandleBaleToken(ctx stdCtx.Context, tokenSHA string, target *repo_model.Repository, mode perm_model.AccessMode) (user *user_model.User, anonymous bool, err error) {
+	claims, err := parseLFSTokenClaims(tokenSHA)
+	if err != nil {
+		return nil, false, err
+	}
+	if claims.RepoID != target.ID {
+		return nil, false, errors.New("invalid token claim")
+	}
+	if claims.UserID == 0 {
+		if mode != perm_model.AccessModeRead || claims.Op != "download" {
+			return nil, false, errors.New("anonymous bale token is read-only")
+		}
+		perm, err := access_model.GetIndividualUserRepoPermission(ctx, target, nil)
+		if err != nil {
+			return nil, false, err
+		}
+		if !perm.CanAccess(mode, unit.TypeCode) {
+			return nil, false, util.NewPermissionDeniedErrorf("no anonymous access to the repository")
+		}
+		return nil, true, nil
+	}
+	u, err := resolveLFSTokenUser(ctx, claims, target, mode)
+	return u, false, err
+}
+
 func handleLFSToken(ctx stdCtx.Context, tokenSHA string, target *repo_model.Repository, mode perm_model.AccessMode) (*user_model.User, error) {
+	claims, err := parseLFSTokenClaims(tokenSHA)
+	if err != nil {
+		return nil, err
+	}
+	if claims.RepoID != target.ID {
+		return nil, errors.New("invalid token claim")
+	}
+	return resolveLFSTokenUser(ctx, claims, target, mode)
+}
+
+func parseLFSTokenClaims(tokenSHA string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenSHA, &Claims{}, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
@@ -600,16 +643,14 @@ func handleLFSToken(ctx stdCtx.Context, tokenSHA string, target *repo_model.Repo
 	if err != nil {
 		return nil, errors.New("invalid token")
 	}
-
 	claims, claimsOk := token.Claims.(*Claims)
 	if !token.Valid || !claimsOk {
 		return nil, errors.New("invalid token claim")
 	}
+	return claims, nil
+}
 
-	if claims.RepoID != target.ID {
-		return nil, errors.New("invalid token claim")
-	}
-
+func resolveLFSTokenUser(ctx stdCtx.Context, claims *Claims, target *repo_model.Repository, mode perm_model.AccessMode) (*user_model.User, error) {
 	if mode == perm_model.AccessModeWrite && claims.Op != "upload" {
 		return nil, errors.New("invalid token claim")
 	}

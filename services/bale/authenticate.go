@@ -21,11 +21,13 @@ import (
 
 // AuthenticateHTTPHandler is the HTTPS analog of `git-bale-authenticate`.
 // ctx.Doer is populated by webAuth.AllowBasic from the request's Basic auth
-// header, so credentials never reach this handler directly.
+// header, so credentials never reach this handler directly. A nil ctx.Doer here
+// means no credentials were presented (wrong credentials are already rejected
+// upstream with 401): an anonymous request, allowed only as a public download.
 //
 //	POST /{owner}/{repo}.git/info/bale/authenticate?op=download|upload
-//	→ 200 LFSTokenResponse, 401 bad/missing creds, 403 wrong scope,
-//	  400 unknown op, 404 Bale disabled or repo invisible
+//	→ 200 LFSTokenResponse, 401 missing creds (private repo or any upload),
+//	  403 wrong scope, 400 unknown op, 404 Bale disabled or repo invisible
 func AuthenticateHTTPHandler(ctx *context.Context) {
 	if !setting.Bale.Enabled {
 		ctx.HTTPError(http.StatusNotFound)
@@ -39,7 +41,8 @@ func AuthenticateHTTPHandler(ctx *context.Context) {
 		return
 	}
 
-	if ctx.Doer == nil {
+	// Anonymous writes are never granted — only a download can be credential-less.
+	if mode == perm_model.AccessModeWrite && ctx.Doer == nil {
 		ctx.Resp.Header().Set("WWW-Authenticate", `Basic realm="bale"`)
 		ctx.HTTPError(http.StatusUnauthorized)
 		return
@@ -52,6 +55,8 @@ func AuthenticateHTTPHandler(ctx *context.Context) {
 		ctx.HTTPError(http.StatusNotFound)
 		return
 	}
+	// ctx.Doer may be nil (anonymous): GetDoerRepoPermission resolves read access
+	// for an anonymous visitor on a public repo and denies it on a private one.
 	perm, err := access_model.GetDoerRepoPermission(ctx, repository, ctx.Doer)
 	if err != nil {
 		log.Error("Bale authenticate: GetDoerRepoPermission(%-v, %-v): %v", repository, ctx.Doer, err)
@@ -59,14 +64,28 @@ func AuthenticateHTTPHandler(ctx *context.Context) {
 		return
 	}
 	if !perm.CanAccess(mode, unit.TypeCode) {
+		// Anonymous request that can't read (private repo) → challenge for
+		// credentials with 401; an authenticated user lacking scope → 403.
+		if ctx.Doer == nil {
+			ctx.Resp.Header().Set("WWW-Authenticate", `Basic realm="bale"`)
+			ctx.HTTPError(http.StatusUnauthorized)
+			return
+		}
 		ctx.HTTPError(http.StatusForbidden)
 		return
+	}
+
+	// Anonymous reads carry UserID 0; check_access resolves that to the anonymous
+	// principal and re-verifies public read access.
+	userID := int64(0)
+	if ctx.Doer != nil {
+		userID = ctx.Doer.ID
 	}
 
 	// Reuse LFS's JWT minter — same secret, same claim shape. check_access
 	// refuses to honor the JWT against any other repo.
 	token, err := lfs.GetLFSAuthTokenWithBearer(lfs.AuthTokenOptions{
-		Op: op, UserID: ctx.Doer.ID, RepoID: repository.ID,
+		Op: op, UserID: userID, RepoID: repository.ID,
 	})
 	if err != nil {
 		log.Error("Bale authenticate: mint JWT: %v", err)

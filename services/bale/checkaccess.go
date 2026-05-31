@@ -16,6 +16,10 @@ import (
 	"code.gitea.io/gitea/services/lfs"
 )
 
+// AnonymousUserID is the subject baleforgit-server gets back for a credential-less
+// public read (the anonymous principal minted by the authenticate endpoint).
+const AnonymousUserID = "anonymous"
+
 // Wire shape mirrors crates/baleforgit-server-authz-http/src/lib.rs:
 //
 //	POST /-/bale/check_access
@@ -70,21 +74,27 @@ func CheckAccessHandler(ctx *context.Context) {
 		return
 	}
 
-	// HandleLFSToken parses+verifies the JWT, asserts it binds to `repository`,
+	// HandleBaleToken parses+verifies the JWT, asserts it binds to `repository`,
 	// and re-checks scope. Bad JWT and scope mismatch both return non-nil err;
 	// we map both to 401 since the caller has nothing actionable to do with
-	// the difference.
+	// the difference. An anonymous principal (read-only, public repo) verifies
+	// to (nil user, anonymous=true).
 	bearer := strings.TrimPrefix(strings.TrimSpace(req.HubBearer), "Bearer ")
-	user, err := lfs.HandleLFSToken(ctx, bearer, repository, requestedMode)
-	if err != nil || user == nil {
+	user, anonymous, err := lfs.HandleBaleToken(ctx, bearer, repository, requestedMode)
+	if err != nil || (!anonymous && user == nil) {
 		log.Trace("Bale check_access: bearer rejected for %s/%s: %v", owner, name, err)
 		ctx.HTTPError(http.StatusUnauthorized)
 		return
 	}
 
+	userID := AnonymousUserID
+	if !anonymous {
+		userID = user.Name
+	}
+
 	ctx.Resp.Header().Set("Content-Type", "application/json")
 	ctx.Resp.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(ctx.Resp).Encode(CheckAccessResponse{UserID: user.Name}); err != nil {
+	if err := json.NewEncoder(ctx.Resp).Encode(CheckAccessResponse{UserID: userID}); err != nil {
 		log.Error("Bale check_access: encode response: %v", err)
 	}
 }
