@@ -32,6 +32,12 @@ func DiscoveryHandler(ctx *context.Context) {
 		return
 	}
 
+	// Same 404 as a missing repo: discovery is unauthenticated metadata.
+	if ctx.Doer == nil && setting.Service.RequireSignInViewStrict {
+		ctx.HTTPError(http.StatusNotFound)
+		return
+	}
+
 	ownerName := ctx.PathParam("username")
 	repoName := strings.TrimSuffix(ctx.PathParam("reponame"), ".git")
 

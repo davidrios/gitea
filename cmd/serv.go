@@ -260,6 +260,10 @@ func runServ(ctx context.Context, c *cli.Command) error {
 		if subVerb != git.CmdSubVerbLfsUpload && subVerb != git.CmdSubVerbLfsDownload {
 			return fail(ctx, "Unknown git-bale-authenticate operation", "Expected 'upload' or 'download', got %q", subVerb)
 		}
+		// ServCommand would check (and init) the wiki, but the token is for the repo.
+		if strings.HasSuffix(reponame, ".wiki") {
+			return fail(ctx, "Bale is not available for wikis", "")
+		}
 	}
 
 	requestedMode, ok := getAccessMode(verb, subVerb)
@@ -313,10 +317,14 @@ func runServ(ctx context.Context, c *cli.Command) error {
 
 	// git-bale token authentication. SSH user is already auth'd via pubkey;
 	// mint a JWT for the client to present to baleforgit-server. Same shape/secret
-	// as LFS — verified via lfs.HandleLFSToken in /-/bale/check_access.
+	// as LFS — verified via lfs.HandleBaleToken in /-/bale/check_access.
 	if verb == git.CmdVerbBaleAuthenticate {
+		tokenOp, ok := lfs.BaleTokenOp(subVerb)
+		if !ok {
+			return fail(ctx, "Unknown git-bale-authenticate operation", "unknown bale op %q", subVerb)
+		}
 		token, err := lfs.GetLFSAuthTokenWithBearer(lfs.AuthTokenOptions{
-			Op: subVerb, UserID: results.UserID, RepoID: results.RepoID,
+			Op: tokenOp, UserID: results.UserID, RepoID: results.RepoID, ExpiresIn: lfs.BaleTokenTTL, Bale: true,
 		})
 		if err != nil {
 			return fail(ctx, "Failed to mint Bale bearer", "GetLFSAuthTokenWithBearer: %v", err)

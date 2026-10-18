@@ -34,7 +34,7 @@ func Bale(ctx *context.Context) {
 	}
 
 	if bale_service.UsageAvailable() {
-		usage, err := bale_service.GetOwnerUsage(ctx, ctx.ContextUser.Name)
+		usage, err := bale_service.GetOwnerUsage(ctx, ctx.ContextUser.ID)
 		if err != nil {
 			log.Warn("Bale org settings: GetOwnerUsage(%s): %v", ctx.ContextUser.Name, err)
 			ctx.Data["BaleUsageError"] = err.Error()

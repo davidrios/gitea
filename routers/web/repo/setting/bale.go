@@ -31,7 +31,7 @@ func Bale(ctx *context.Context) {
 	// Template branches on which of {BaleUsage, BaleUsageError, neither} is
 	// set; "neither" surfaces the "admin token unconfigured" message.
 	if bale_service.UsageAvailable() {
-		usage, err := bale_service.GetRepoUsage(ctx, ctx.Repo.Repository.OwnerName, ctx.Repo.Repository.Name)
+		usage, err := bale_service.GetRepoUsage(ctx, ctx.Repo.Repository)
 		if err != nil {
 			// Surface the failure inline rather than 500'ing the whole
 			// settings page — the remote bale-server being temporarily

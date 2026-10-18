@@ -6,6 +6,7 @@ package bale
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/url"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"code.gitea.io/gitea/modules/bale"
 	"code.gitea.io/gitea/modules/setting"
 	"code.gitea.io/gitea/modules/test"
+	"code.gitea.io/gitea/modules/util"
 	"code.gitea.io/gitea/services/lfs"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -31,10 +33,11 @@ func TestBuildDownloadRedirectURL(t *testing.T) {
 	defer test.MockVariableValue(&setting.Bale.Enabled, true)()
 	defer test.MockVariableValue(&setting.Bale.ServerURL, server)()
 	defer test.MockVariableValue(&setting.LFS.JWTSecretBytes, []byte(secret))()
-	defer test.MockVariableValue(&setting.LFS.HTTPAuthExpiry, 5*time.Minute)()
+	// The LFS default (24h) must not leak into download links.
+	defer test.MockVariableValue(&setting.LFS.HTTPAuthExpiry, 24*time.Hour)()
 
 	doer := &user_model.User{ID: 42}
-	repo := &repo_model.Repository{ID: 99, OwnerName: "alice", Name: "models"}
+	repo := &repo_model.Repository{ID: 99, OwnerID: 7, OwnerName: "alice", Name: "models"}
 	ptr := bale.Pointer{Hash: hash, FileSize: 1234}
 
 	t.Run("Builds a redirect URL with token and filename", func(t *testing.T) {
@@ -45,7 +48,7 @@ func TestBuildDownloadRedirectURL(t *testing.T) {
 		u, err := url.Parse(raw)
 		require.NoError(t, err)
 		assert.Equal(t, "big file.bin", u.Query().Get("filename"))
-		assert.Equal(t, "alice/models", u.Query().Get("repo"))
+		assert.Equal(t, "id/99", u.Query().Get("repo"), "repo must be the rename/transfer-stable id/<repoID>")
 
 		token := u.Query().Get("token")
 		require.NotEmpty(t, token)
@@ -59,7 +62,11 @@ func TestBuildDownloadRedirectURL(t *testing.T) {
 		require.True(t, parsed.Valid)
 		assert.Equal(t, repo.ID, claims.RepoID)
 		assert.Equal(t, doer.ID, claims.UserID)
-		assert.Equal(t, "download", claims.Op)
+		assert.Equal(t, lfs.BaleFileOp, claims.Op, "link tokens must not be token-exchange credentials")
+		assert.Equal(t, hash, claims.FileID)
+		require.NotNil(t, claims.ExpiresAt)
+		assert.LessOrEqual(t, time.Until(claims.ExpiresAt.Time), DownloadLinkTTL)
+		assert.Greater(t, time.Until(claims.ExpiresAt.Time), DownloadLinkTTL-time.Minute)
 
 		// Filename binding: SHA-256 of the filename must be present in the claim
 		// so baleforgit-server can refuse a rewritten `filename` query param.
@@ -109,6 +116,37 @@ func TestBuildDownloadRedirectURL(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, parsed.Valid)
 		assert.Equal(t, int64(0), claims.UserID)
-		assert.Equal(t, "download", claims.Op)
+		assert.Equal(t, lfs.BaleFileOp, claims.Op)
+		assert.Equal(t, hash, claims.FileID)
 	})
+}
+
+func TestCanonicalRepoID(t *testing.T) {
+	repo := &repo_model.Repository{ID: 99, OwnerID: 7, OwnerName: "Alice", Name: "Models"}
+	assert.Equal(t, "id/99", CanonicalRepoID(repo))
+	assert.Equal(t, "7", CanonicalOwnerID(repo.OwnerID))
+
+	for in, want := range map[string]bool{
+		"id/99":        false,
+		"id/98":        true,
+		"id/0":         true,
+		"Alice/Models": false,
+		"olduser/old":  false,
+		"7/99":         false,
+		"id/abc":       false,
+	} {
+		assert.Equal(t, want, repoRefConflicts(in, repo), in)
+	}
+
+	// An owner literally named "id" with a numeric repo name is a name, not an id.
+	named := &repo_model.Repository{ID: 42, OwnerName: "id", Name: "5"}
+	assert.False(t, repoRefConflicts("id/5", named))
+	assert.True(t, repoRefConflicts("id/6", named))
+}
+
+func TestIsAccessRejection(t *testing.T) {
+	assert.True(t, isAccessRejection(util.NewPermissionDeniedErrorf("x")))
+	assert.True(t, isAccessRejection(repo_model.ErrRepoNotExist{ID: 1}))
+	assert.True(t, isAccessRejection(user_model.ErrUserNotExist{UID: 1}))
+	assert.False(t, isAccessRejection(errors.New("database is locked")))
 }

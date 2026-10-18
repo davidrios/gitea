@@ -124,6 +124,12 @@ func TestBaleSSHAuthenticate_BadOp(t *testing.T) {
 			t.Run("CreateUserKey", doAPICreateUserKey(apiCtx, "dfs-test-key-badop", keyFile))
 			cmd := sshBaleCommand(keyFile, "git-bale-authenticate user2/repo1 wat")
 			assert.Error(t, cmd.Run(), "expected ssh exit non-zero for unsupported op")
+			// The LFS verb must not mint arbitrary ops (e.g. a Bale write op).
+			require.NoError(t, sshBaleCommand(keyFile, "git-lfs-authenticate user2/repo1 download").Run())
+			for _, op := range []string{"bale-upload", "bale-download", "bale-file"} {
+				cmd = sshBaleCommand(keyFile, "git-lfs-authenticate user2/repo1 "+op)
+				assert.Error(t, cmd.Run(), "expected git-lfs-authenticate to refuse op %q", op)
+			}
 		})
 	})
 }

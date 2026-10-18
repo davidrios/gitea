@@ -9,8 +9,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
+	repo_model "code.gitea.io/gitea/models/repo"
 	"code.gitea.io/gitea/modules/httplib"
 	"code.gitea.io/gitea/modules/json"
 	"code.gitea.io/gitea/modules/setting"
@@ -70,19 +72,21 @@ func UsageAvailable() bool {
 	return setting.Bale.Enabled && setting.Bale.AdminToken != ""
 }
 
-// GetOwnerUsage calls GET /v1/usage/{owner}. Precondition: [UsageAvailable].
-func GetOwnerUsage(ctx context.Context, ownerName string) (*OwnerUsage, error) {
+// GetOwnerUsage calls GET /v1/usage/{ownerID} (see CanonicalOwnerID).
+// Precondition: [UsageAvailable].
+func GetOwnerUsage(ctx context.Context, ownerID int64) (*OwnerUsage, error) {
 	var out OwnerUsage
-	if err := getJSON(ctx, "/v1/usage/"+url.PathEscape(ownerName), &out); err != nil {
+	if err := getJSON(ctx, "/v1/usage/"+url.PathEscape(CanonicalOwnerID(ownerID)), &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
-// GetRepoUsage calls GET /v1/usage/repo/{owner}/{repo}. Precondition: [UsageAvailable].
-func GetRepoUsage(ctx context.Context, ownerName, repoName string) (*RepoUsage, error) {
+// GetRepoUsage calls GET /v1/usage/repo/id/{repoID} (see CanonicalRepoID).
+// Precondition: [UsageAvailable].
+func GetRepoUsage(ctx context.Context, repo *repo_model.Repository) (*RepoUsage, error) {
 	var out RepoUsage
-	path := "/v1/usage/repo/" + url.PathEscape(ownerName) + "/" + url.PathEscape(repoName)
+	path := "/v1/usage/repo/id/" + url.PathEscape(strconv.FormatInt(repo.ID, 10))
 	if err := getJSON(ctx, path, &out); err != nil {
 		return nil, err
 	}

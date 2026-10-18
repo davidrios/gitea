@@ -59,7 +59,7 @@ func TestBaleWebDownload(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, serverURL, loc.Scheme+"://"+loc.Host)
 			assert.Equal(t, "/v1/files/"+hash, loc.Path)
-			assert.Equal(t, "user2/repo1", loc.Query().Get("repo"))
+			assert.Equal(t, "id/1", loc.Query().Get("repo"), "canonical id/<repoID> of user2/repo1")
 			assert.Equal(t, "model.bin", loc.Query().Get("filename"))
 
 			claims := &lfs.Claims{}
@@ -69,7 +69,8 @@ func TestBaleWebDownload(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, parsed.Valid)
 			assert.Equal(t, int64(0), claims.UserID, "anonymous principal carries UserID 0")
-			assert.Equal(t, "download", claims.Op)
+			assert.Equal(t, lfs.BaleFileOp, claims.Op)
+			assert.Equal(t, hash, claims.FileID)
 
 			// The token binds the filename so bale-server can reject a rewritten name.
 			want := sha256.Sum256([]byte("model.bin"))

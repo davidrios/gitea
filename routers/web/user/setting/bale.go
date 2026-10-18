@@ -27,7 +27,7 @@ func Bale(ctx *context.Context) {
 	ctx.Data["PageIsSettingsBale"] = true
 
 	if bale_service.UsageAvailable() {
-		usage, err := bale_service.GetOwnerUsage(ctx, ctx.Doer.Name)
+		usage, err := bale_service.GetOwnerUsage(ctx, ctx.Doer.ID)
 		if err != nil {
 			log.Warn("Bale user settings: GetOwnerUsage(%s): %v", ctx.Doer.Name, err)
 			ctx.Data["BaleUsageError"] = err.Error()

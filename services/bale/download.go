@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	repo_model "code.gitea.io/gitea/models/repo"
 	user_model "code.gitea.io/gitea/models/user"
@@ -18,12 +19,15 @@ import (
 	"code.gitea.io/gitea/services/lfs"
 )
 
-// BuildDownloadRedirectURL mints a short-lived download JWT (same shape as LFS;
-// baleforgit-server's check_access verifies it against `repo`) and returns the
+// DownloadLinkTTL bounds a download link's JWT: it rides in a URL that ends up
+// in browser history and proxy logs.
+const DownloadLinkTTL = 5 * time.Minute
+
+// BuildDownloadRedirectURL mints a download-link JWT and returns the
 // bale-server stream URL the browser should be redirected to. The JWT rides in
 // the query string because browsers can't attach an Authorization header on a
-// 302 follow — accept the leakage trade-off (URL is short-lived and scoped to a
-// single repo+file).
+// 302 follow, so it is a lfs.BaleFileOp token: short-lived, bound to this repo
+// and this one file, and refused by check_access for token exchange.
 //
 // A nil doer mints an anonymous (UserID 0) token: the route already gates this
 // to repos the visitor can read, so anonymous browsing of a public repo's bale
@@ -52,8 +56,10 @@ func BuildDownloadRedirectURL(p bale.Pointer, repo *repo_model.Repository, doer 
 	}
 
 	token, err := lfs.GetLFSAuthTokenWithBearer(lfs.AuthTokenOptions{
-		Op: "download", UserID: userID, RepoID: repo.ID,
+		Op: lfs.BaleFileOp, UserID: userID, RepoID: repo.ID, Bale: true,
 		FilenameSHA256: filenameHash,
+		FileID:         p.Hash,
+		ExpiresIn:      DownloadLinkTTL,
 	})
 	if err != nil {
 		return "", fmt.Errorf("mint bale download JWT: %w", err)
@@ -63,7 +69,7 @@ func BuildDownloadRedirectURL(p bale.Pointer, repo *repo_model.Repository, doer 
 
 	q := url.Values{}
 	q.Set("token", token)
-	q.Set("repo", repo.FullName())
+	q.Set("repo", CanonicalRepoID(repo))
 	if filename != "" {
 		q.Set("filename", filename)
 	}

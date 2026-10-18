@@ -82,6 +82,11 @@ func ServCommand(ctx *context.PrivateContext) {
 	repoName := ctx.PathParam("repo")
 	mode := perm.AccessMode(ctx.FormInt("mode"))
 	verb := ctx.FormString("verb")
+	// AccessModeNone would pass every "mode < required" check below.
+	if mode <= perm.AccessModeNone || mode > perm.AccessModeOwner {
+		ctx.JSON(http.StatusBadRequest, private.Response{UserMsg: "invalid access mode"})
+		return
+	}
 
 	// Set the basic parts of the results to return
 	results := private.ServCommandResults{
@@ -178,7 +183,8 @@ func ServCommand(ctx *context.PrivateContext) {
 
 		if repo == nil {
 			repoExist = false
-			if mode == perm.AccessModeRead {
+			// git-bale-authenticate only mints tokens; it must never push-create.
+			if mode == perm.AccessModeRead || verb == git.CmdVerbBaleAuthenticate {
 				// User is fetching/cloning a non-existent repository
 				log.Warn("Failed authentication attempt (cannot find repository: %s/%s) from %s", results.OwnerName, results.RepoName, ctx.RemoteAddr())
 				ctx.JSON(http.StatusNotFound, private.Response{

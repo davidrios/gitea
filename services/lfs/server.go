@@ -6,6 +6,7 @@ package lfs
 import (
 	stdCtx "context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -56,7 +58,49 @@ type Claims struct {
 	// param when its SHA-256 matches this claim, blocking attackers from
 	// rewriting the Content-Disposition name in a leaked URL.
 	FilenameSHA256 string `json:",omitempty"`
+	// FileID binds a BaleFileOp token to the one xet file hash it may download.
+	FileID string `json:",omitempty"`
 	jwt.RegisteredClaims
+}
+
+// BaleFileOp marks a browser download-link token. Such links leak into browser
+// history and proxy logs, so they are accepted only for a single-file download
+// (bound via FileID) and never for LFS or bale token exchange.
+const BaleFileOp = "bale-file"
+
+// Bale token-exchange ops. Distinct from LFS's "download"/"upload" so a Bale
+// JWT is never an LFS credential and vice versa (they share the secret).
+const (
+	BaleDownloadOp = "bale-download"
+	BaleUploadOp   = "bale-upload"
+)
+
+// BaleTokenTTL bounds a forge-minted Bale JWT: it is exchanged at once, and
+// the client re-mints on refresh, so a leaked one shouldn't outlive revocation
+// of the credential that minted it by long.
+const BaleTokenTTL = 15 * time.Minute
+
+func baleAudience(bale bool) jwt.ClaimStrings {
+	if bale {
+		return jwt.ClaimStrings{BaleAudience}
+	}
+	return nil
+}
+
+func isBaleToken(claims *Claims) bool {
+	return slices.Contains(claims.Audience, BaleAudience)
+}
+
+// BaleTokenOp maps a wire op ("download"/"upload") to its Bale JWT op.
+func BaleTokenOp(op string) (string, bool) {
+	switch op {
+	case "download":
+		return BaleDownloadOp, true
+	case "upload":
+		return BaleUploadOp, true
+	default:
+		return "", false
+	}
 }
 
 type AuthTokenOptions struct {
@@ -64,19 +108,33 @@ type AuthTokenOptions struct {
 	UserID         int64
 	RepoID         int64
 	FilenameSHA256 string
+	FileID         string
+	// ExpiresIn overrides setting.LFS.HTTPAuthExpiry when non-zero.
+	ExpiresIn time.Duration
+	// Bale marks a token minted by a Bale endpoint (BaleAudience). Bale ops
+	// are honored only with it, so no LFS minting path can produce one.
+	Bale bool
 }
+
+const BaleAudience = "gitea-bale"
 
 func GetLFSAuthTokenWithBearer(opts AuthTokenOptions) (string, error) {
 	now := time.Now()
+	expiresIn := setting.LFS.HTTPAuthExpiry
+	if opts.ExpiresIn != 0 {
+		expiresIn = opts.ExpiresIn
+	}
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(setting.LFS.HTTPAuthExpiry)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(expiresIn)),
 			NotBefore: jwt.NewNumericDate(now),
+			Audience:  baleAudience(opts.Bale),
 		},
 		RepoID:         opts.RepoID,
 		Op:             opts.Op,
 		UserID:         opts.UserID,
 		FilenameSHA256: opts.FilenameSHA256,
+		FileID:         opts.FileID,
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
@@ -584,30 +642,53 @@ func authenticate(ctx *context.Context, repository *repo_model.Repository, autho
 	return true
 }
 
-// HandleLFSToken is the exported entry point for handleLFSToken; reused by
-// the git-bale check_access handler.
-func HandleLFSToken(ctx stdCtx.Context, tokenSHA string, target *repo_model.Repository, mode perm_model.AccessMode) (*user_model.User, error) {
-	return handleLFSToken(ctx, tokenSHA, target, mode)
-}
-
-// HandleBaleToken verifies a git-bale JWT like HandleLFSToken, but additionally
+// HandleBaleToken verifies a git-bale JWT like handleLFSToken, but additionally
 // honors the anonymous principal: a claim with UserID 0 is a credential-less
-// public read minted by the bale authenticate endpoint. It is accepted only for
-// read scope and only when the repo grants read to an anonymous visitor (i.e.
-// the repo is public), so a forged anonymous claim can't reach a private repo.
-// On that path it returns (nil, true, nil); otherwise it resolves the real user
-// and returns (user, false, nil). A non-nil error means the token is rejected.
-func HandleBaleToken(ctx stdCtx.Context, tokenSHA string, target *repo_model.Repository, mode perm_model.AccessMode) (user *user_model.User, anonymous bool, err error) {
-	claims, err := parseLFSTokenClaims(tokenSHA)
+// public read minted by the bale authenticate endpoint or a download link. It
+// is accepted only for read scope and only when the repo grants read to an
+// anonymous visitor (i.e. the repo is public), so a forged anonymous claim
+// can't reach a private repo. On that path it returns (nil, true, nil);
+// otherwise it resolves the real user and returns (user, false, nil). A
+// non-nil error means the token is rejected.
+//
+// fileID selects the purpose: "" is token exchange (download-link tokens are
+// refused); non-empty is a single-file download that accepts only a BaleFileOp
+// token bound to exactly that file.
+func HandleBaleToken(ctx stdCtx.Context, tokenSHA string, target *repo_model.Repository, mode perm_model.AccessMode, fileID string) (user *user_model.User, anonymous bool, err error) {
+	claims, err := ParseBaleToken(tokenSHA)
 	if err != nil {
 		return nil, false, err
 	}
+	return AuthorizeBaleClaims(ctx, claims, target, mode, fileID)
+}
+
+// ParseBaleToken verifies a bale JWT's signature and expiry without touching
+// the database, so callers can resolve the repo from the token's own RepoID.
+func ParseBaleToken(tokenSHA string) (*Claims, error) {
+	return parseLFSTokenClaims(tokenSHA)
+}
+
+// AuthorizeBaleClaims is HandleBaleToken for already-verified claims. Every
+// rejection is util.ErrPermissionDenied (or user_model.ErrUserNotExist for a
+// deleted user); any other error is an internal failure.
+func AuthorizeBaleClaims(ctx stdCtx.Context, claims *Claims, target *repo_model.Repository, mode perm_model.AccessMode, fileID string) (user *user_model.User, anonymous bool, err error) {
 	if claims.RepoID != target.ID {
-		return nil, false, errors.New("invalid token claim")
+		return nil, false, util.NewPermissionDeniedErrorf("invalid token claim")
+	}
+	if err := CheckBaleTokenPurpose(claims, mode, fileID); err != nil {
+		return nil, false, err
+	}
+	// Same rule as routers/private/serv.go for git pushes.
+	if mode > perm_model.AccessModeRead && (target.IsArchived || target.IsMirror) {
+		return nil, false, util.NewPermissionDeniedErrorf("repository is read-only (archived or mirror)")
 	}
 	if claims.UserID == 0 {
-		if mode != perm_model.AccessModeRead || claims.Op != "download" {
-			return nil, false, errors.New("anonymous bale token is read-only")
+		if mode != perm_model.AccessModeRead {
+			return nil, false, util.NewPermissionDeniedErrorf("anonymous bale token is read-only")
+		}
+		// Checked here too, so tokens minted before sign-in was required die.
+		if setting.Service.RequireSignInViewStrict {
+			return nil, false, util.NewPermissionDeniedErrorf("sign-in required")
 		}
 		perm, err := access_model.GetIndividualUserRepoPermission(ctx, target, nil)
 		if err != nil {
@@ -622,12 +703,36 @@ func HandleBaleToken(ctx stdCtx.Context, tokenSHA string, target *repo_model.Rep
 	return u, false, err
 }
 
+// CheckBaleTokenPurpose enforces the op/purpose pairing for HandleBaleToken
+// (see its fileID doc) without touching the database.
+func CheckBaleTokenPurpose(claims *Claims, mode perm_model.AccessMode, fileID string) error {
+	if !isBaleToken(claims) {
+		return util.NewPermissionDeniedErrorf("not a bale token")
+	}
+	if fileID == "" {
+		if claims.Op != BaleDownloadOp && claims.Op != BaleUploadOp {
+			return util.NewPermissionDeniedErrorf("invalid token op for token exchange")
+		}
+		if claims.UserID == 0 && claims.Op != BaleDownloadOp {
+			return util.NewPermissionDeniedErrorf("anonymous bale token is read-only")
+		}
+		return nil
+	}
+	if claims.Op != BaleFileOp || mode != perm_model.AccessModeRead {
+		return util.NewPermissionDeniedErrorf("invalid token op for file download")
+	}
+	if claims.FileID == "" || subtle.ConstantTimeCompare([]byte(claims.FileID), []byte(fileID)) != 1 {
+		return util.NewPermissionDeniedErrorf("token not bound to this file")
+	}
+	return nil
+}
+
 func handleLFSToken(ctx stdCtx.Context, tokenSHA string, target *repo_model.Repository, mode perm_model.AccessMode) (*user_model.User, error) {
 	claims, err := parseLFSTokenClaims(tokenSHA)
 	if err != nil {
 		return nil, err
 	}
-	if claims.RepoID != target.ID {
+	if claims.RepoID != target.ID || isBaleToken(claims) || strings.HasPrefix(claims.Op, "bale-") {
 		return nil, errors.New("invalid token claim")
 	}
 	return resolveLFSTokenUser(ctx, claims, target, mode)
@@ -639,7 +744,7 @@ func parseLFSTokenClaims(tokenSHA string) (*Claims, error) {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
 		return setting.LFS.JWTSecretBytes, nil
-	})
+	}, jwt.WithExpirationRequired())
 	if err != nil {
 		return nil, errors.New("invalid token")
 	}
@@ -651,8 +756,8 @@ func parseLFSTokenClaims(tokenSHA string) (*Claims, error) {
 }
 
 func resolveLFSTokenUser(ctx stdCtx.Context, claims *Claims, target *repo_model.Repository, mode perm_model.AccessMode) (*user_model.User, error) {
-	if mode == perm_model.AccessModeWrite && claims.Op != "upload" {
-		return nil, errors.New("invalid token claim")
+	if mode == perm_model.AccessModeWrite && claims.Op != "upload" && claims.Op != BaleUploadOp {
+		return nil, util.NewPermissionDeniedErrorf("invalid token claim")
 	}
 
 	u, err := user_model.GetUserByID(ctx, claims.UserID)
